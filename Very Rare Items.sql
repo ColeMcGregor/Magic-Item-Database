@@ -49,6 +49,7 @@ INSERT INTO VRareCons(name, price, amount) VALUES('Spell Scroll (6th Level)', '1
 INSERT INTO VRareCons(name, price, amount) VALUES('Spell Scroll (7th Level)', '3000', '2');
 INSERT INTO VRareCons(name, price, amount) VALUES('Spell Scroll (8th Level)', '5000', '1');
 INSERT INTO VRareCons(name, price, amount) VALUES('Spell Scroll (9th Level)', '10000', '1');
+INSERT INTO VRareCons(name, price, amount) VALUES('Supreme Rejuvenating Draft', '4000', '1');
 
 
 CREATE TABLE "VRareItem" (

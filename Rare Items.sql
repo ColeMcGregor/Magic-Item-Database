@@ -69,7 +69,24 @@ INSERT INTO RareCons(name, price, amount) VALUES('Spell Scroll (4th Level)', '40
 INSERT INTO RareCons(name, price, amount) VALUES('Spell Scroll (4th Level)', '400', '3');
 INSERT INTO RareCons(name, price, amount) VALUES('Spell Scroll (5th Level)', '800', '2');
 INSERT INTO RareCons(name, price, amount) VALUES('Spell Scroll (6th Level)', '1500', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Greater Rejuvenating Draft', '700', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Superior Rejuvenating Draft', '1500', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Ankh of Anointment', '800', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Essence of Rage', '1000', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Gorgon Potion', '800', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Potion of Puddle Scrying', '750', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Stoppered Oasis', '1000', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Vortex Elixir', '800', '1');
+INSERT INTO RareCons(name, price, amount) VALUES('Weirdwater Poison', '1500', '1');
 
+SELECT rc1.name,
+       rc1.price
+FROM   RareCons AS rc1
+	WHERE  rc1.itemID = (
+	   SELECT MIN(rc2.itemID)
+	   FROM   RareCons AS rc2
+	   WHERE  rc2.name = rc1.name
+);
 
 
 CREATE TABLE "RareItem" (

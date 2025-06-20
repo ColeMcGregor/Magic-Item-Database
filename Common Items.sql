@@ -54,9 +54,7 @@ INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Mana', '75', '2');
 INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Mana', '75', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Bloodlust', '500', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Peerless Focus', '250', '1');
-INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Barkskin', '400', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Vigilance', '200', '1');
-INSERT INTO CommonCons(name, price, amount) VALUES('Elixir of Darkvision', '200', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Potion of Climbing', '75', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Potion of Glorious Vaulting', '100', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Potion of Water Breathing', '100', '1');
@@ -78,6 +76,37 @@ INSERT INTO CommonCons(name, price, amount) VALUES('Spell Scroll (1st Level)', '
 INSERT INTO CommonCons(name, price, amount) VALUES('Spell Scroll (2nd Level)', '100', '1');
 INSERT INTO CommonCons(name, price, amount) VALUES('Spell Scroll (2nd Level)', '100', '2');
 INSERT INTO CommonCons(name, price, amount) VALUES('Spell Scroll (3rd Level)', '200', '1');
+INSERT INTO CommonCons(name, price, amount) VALUES('Potion of Bottled Talent', '100', '1');
+INSERT INTO CommonCons(name, price, amount) VALUES('Oozo Potion', '100', '1');
+INSERT INTO CommonCons(name, price, amount) VALUES('Potion of Natures Growth', '400', '1');
+INSERT INTO CommonCons(name, price, amount) VALUES('Rejuvenating Draft','175','1');
+INSERT INTO CommonCons(name, price, amount) VALUES('Snake Oil', '500', '1');
+
+SELECT cc1.name,
+       cc1.price
+FROM   CommonCons AS cc1
+	WHERE  cc1.itemID = (
+	   SELECT MIN(cc2.itemID)
+	   FROM   CommonCons AS cc2
+	   WHERE  cc2.name = cc1.name
+);
+
+
+CREATE TABLE "Drinks" (
+	"itemID"	INTEGER UNIQUE,
+	"name"	TEXT NOT NULL,
+	"price"	INTEGER,
+	PRIMARY KEY("itemID" AUTOINCREMENT)
+);
+
+INSERT INTO Drinks(name, price) VALUES('Celestial Sunrise', '200');
+INSERT INTO Drinks(name, price) VALUES('Shifters Shine', '75');
+INSERT INTO Drinks(name, price) VALUES('Aged Goodberry Wine', '1000');
+INSERT INTO Drinks(name, price) VALUES('Bloody Marilith', '75');
+INSERT INTO Drinks(name, price) VALUES('Djinn and Tonic', '20');
+INSERT INTO Drinks(name, price) VALUES('Orostead Iced Tea', '25');
+INSERT INTO Drinks(name, price) VALUES('Wispy Sour', '30');
+INSERT INTO Drinks(name, price) VALUES('Chi-Balancing Tea', '150');
 
 
 CREATE TABLE "CommonItem" (
@@ -140,7 +169,66 @@ INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Conducting', '40', '
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Pyrotechnics', '75', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Scowls', '50', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Smiles', '50', 'N');
-
+INSERT INTO CommonItem(name, price, attune) VALUES('Amulet of the Pleasing Bouquet', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Anthology of Enhanced Radiance', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Archaic Creed', '60', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Atlas to Libation', '35', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Birdsong Whistle', '85', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Borrowers Bookmark', '40', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Cage of Folly', '75', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Compendium of Many Colors', '60', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Contract of Indentured Service', '150', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Draconic Diorama', '45', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Enchanted Music Sheet', '55', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Essay on Efficient Armor Management', '80', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Explorers Chalk', '95', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Fan of Whispering', '25', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Fathomers Ring', '85', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Finder Gremlin', '20', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Flask of Inebriation', '90', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Fools Hat', '60', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Glowing Body Paint', '15', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Harlequins Cards', '40', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Hat of Grand Entrances', '40', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Humour Realignment Transfiguration', '30', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Inkpot of the Thrifty Apprentice', '75', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Legerdemain Gloves', '95', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Letter-Lift Paper', '40', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Library Scarf', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Lockpicks of Memory', '150', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Marble of Direction', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Mask of Anonymity', '80', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Matemal Cameo', '90', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Message Whistle', '95', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Midnight Pearls', '95', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Mug of Warming', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Oil of Cosmetic Enhancement', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Opera-Goers Guise', '95', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Organizer Gremline', '90', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Perdita Ravenwings True Name', '90', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Preserved Imps Head', '35', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Prismatic Gown', '90', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Quick Canoe Paddle', '75', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Sack of Sacks', '55', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Scrap of Forbidden Text', '20', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Security Gremlin', '100', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Shoulder Dragon Brooch', '90', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Signal Rings', '60', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Sinners Ashes', '35', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Snake-Eye Bones', '55', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tailored Suit of Armor', '80', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Timekeeper Gremlin', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tome of the Endless Tale', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tools of the Hidden Hand', '30', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('True Weight Gloved', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Unliving Rune', '75', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wand of the Scribe', '75', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Waystone', '50', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wig of Styling', '15', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wood Woad Amulet', '100', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Zlicks Message Cushion', '40', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Freerunners Leather Armor', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('', '0', 'N');
 
 
 CREATE TABLE "UncommonItem" (
