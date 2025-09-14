@@ -89,7 +89,8 @@ FROM   CommonCons AS cc1
 	   SELECT MIN(cc2.itemID)
 	   FROM   CommonCons AS cc2
 	   WHERE  cc2.name = cc1.name
-);
+	)
+ORDER BY cc1.name ASC;
 
 
 CREATE TABLE "Drinks" (
@@ -169,6 +170,7 @@ INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Conducting', '40', '
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Pyrotechnics', '75', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Scowls', '50', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Smiles', '50', 'N');
+
 INSERT INTO CommonItem(name, price, attune) VALUES('Amulet of the Pleasing Bouquet', '50', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Anthology of Enhanced Radiance', '50', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Archaic Creed', '60', 'N');
@@ -227,15 +229,170 @@ INSERT INTO CommonItem(name, price, attune) VALUES('Waystone', '50', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wig of Styling', '15', 'N');
 INSERT INTO CommonItem(name, price, attune) VALUES('Wood Woad Amulet', '100', 'Y');
 INSERT INTO CommonItem(name, price, attune) VALUES('Zlicks Message Cushion', '40', 'N');
-INSERT INTO CommonItem(name, price, attune) VALUES('Freerunners Leather Armor', '0', 'N');
-INSERT INTO CommonItem(name, price, attune) VALUES('', '0', 'N');
 
+INSERT INTO CommonItem(name, price, attune) VALUES('Freerunners Leather Armor', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bulletin Buckler', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Sun and Moon Shield', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Dealmaker''s Ring', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Doodle Ring', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Pair of Tiny Violin Rings', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of Gestures', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of Names', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of Perching', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of Roses', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of Silverware', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of the Candle Keeper', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of the Distant Digit', '0', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of the Fowl Sentinel', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ring of the Printless', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Rings of the Secret Scribe', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Status Signets', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Vial Ring', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Instigator''s Rod', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Periscope Rod', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Worker''s Wondrous Ladder', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Hedgewitch''s Gardening Cane', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Stalwart Staff', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Borbos Joyous Wand of Color', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Cherry Blossom Wand', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Bubbles', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wand of Torchlight', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bird''s-Eye Bolt', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Fanfare Ammunition', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Scarring Axe', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bonfire Blade', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Weapon of Showmanship', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Torpedo Arrow', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Rope Caster', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Intrepid Knife', '0', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Hammer of Nails', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Redsmith Hammer', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Campers Crutch', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Silver Star Cane', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Light Sling', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Alcoholock', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Aurora Dust', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bag of Bellstones', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Ball of Wild Earth', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bands of the Found and Lost', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bard in a Box', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bell of Alarm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Belltower Triangle', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bird of a Feather', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bonfire Candle', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bonfire Charm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Book of Instant Copying', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Borbos''s Marvelous Magic Marker', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bubble Collar', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Bullfrog Totem', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Candleflame Helm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Candy Xorn', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Catnip Amulet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Cleaning Cube', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Cloth of Instant Tables', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Companions Band', '0', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Container of Heat and Frost', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Copyquill', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Diorama Die', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Dress of Many Pockets', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Drowner''s Pearl', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Dryadleaf', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Everlasting Sugarbomb', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Featherwumpus', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Firecracker Crystals', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Forecaster''s Cloak', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Fortune''s Flower', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Foxfire Charm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Frefil''s Scrummy Trifection', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Freshwater Pitcher', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Gardener''s Candle Holder', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Grasping Seedling Necklace', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Grass Carpet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Gravity Goblet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Greenthumb Whittler', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Griffon Coinpouch', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Griffon Key Loop', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Headband of the Sweatless', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Heart of the Sleeveless', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Immovable Button', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Inker''s Armband', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Journal of Dreams', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Leatherbeard', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Living Wig', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Magnificent Pocket Vanity', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Mask of the Crocodile', '0', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Merry Berry', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Mimic''s Smilemaker', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Miraculous Bread Box', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Neutralizing Spray', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Oaken Candle', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Orators Quill', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Orb of Remembrance', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Owl Helm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Owlbear Snugglebeast', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Patch of the Mallard', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Patch of the Open Eye', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Patch of the Pail', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Patch of the Tome', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Performers Puppet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Permanent Parchment', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Phantom Walkers', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Pipe of Delicious Smells', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Pollen Pipe', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Poltergeist Candle Holder', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Pomade of Ten Thousand Styles', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Pop-Up Business Card', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Profane Mask', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Quicksilver Clay', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Radiant Teapot', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Redsmith Carrying Pack', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Redsmith Crucible Set', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Rod of Endless Light', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Rope Cobra', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Rose Quartz Koi', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Seat Belt', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Sentry Candle', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Shapeshifters Circlet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Shimmering Spectacles', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Shipwright''s Watch', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Silver Coin of Duvra', '0', 'Y');
+INSERT INTO CommonItem(name, price, attune) VALUES('Singing Stein', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Sleepytime Sheep Stuffy', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Smash Potatoes', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Snow Rider''s Sleigh', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Snowball Mittens', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Spool of Shadow', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Stamp of Shipping', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Steps of the Trickster', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Storm Seer Lamp', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Storyteller''s Stein', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Stylists Circlet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tea Weird', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tear of Gaia', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tide Turner', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Tote of Tricky Treat Sugarbombs', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Turtle Brooch', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Uorik Juice Cup', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Vineyard Amulet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Vox Helm', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Walking Pot', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Waterwine Goblet', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Webgrip Rucksack', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Whispergust Mote', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Widemouth Bucket', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Williwig''s Time Stopper', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Winner''s Trophy', '0', 'N');
+INSERT INTO CommonItem(name, price, attune) VALUES('Wizards'' Bout Top', '0', 'N');
 
 CREATE TABLE "UncommonItem" (
 	"itemID"	INTEGER UNIQUE,
 	"name"	TEXT NOT NULL,
 	"price"	INTEGER,
 	"attune"	TEXT NOT NULL,
+	"class"		TEXT,
 	PRIMARY KEY("itemID" AUTOINCREMENT),
 	CHECK("attune" IN ('Y', 'N'))
 );
+
+
+INSERT INTO UncommonItem(name, price, attune, class) VALUES('Abjurers Gilder', '0', 'Y', 'Wizard');

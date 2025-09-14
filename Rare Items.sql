@@ -86,7 +86,8 @@ FROM   RareCons AS rc1
 	   SELECT MIN(rc2.itemID)
 	   FROM   RareCons AS rc2
 	   WHERE  rc2.name = rc1.name
-);
+	)
+ORDER BY rc1.name ASC;
 
 
 CREATE TABLE "RareItem" (
