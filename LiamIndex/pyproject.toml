@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "liamindex"
+version = "0.1.0"
+description = "LiamIndex: a system for importing, storing, and generating item inventories (shops, NPCs, enemies, chests)."
+authors = ["ColeMcGregor <gc28mcgr@siena.edu>"]
+readme = "README.md"
+packages = [{ include = "app", from = "src" }]
+requires-python = ">=3.12"
+
+[tool.poetry.dependencies]
+python = ">=3.12"
+
+# Core libraries
+sqlalchemy = "^2.0"
+alembic = "^1.13"
+pydantic = "^2.8"
+
+# Parsing & data
+pandas = "^2.2"
+openpyxl = "^3.1"
+requests = "^2.32"
+python-dotenv = "^1.0"
+
+# Output / formatting
+tabulate = "^0.9"
+markdown2 = "^2.5"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2"
+black = "^24.0"
+mypy = "^1.10"
+
+[tool.poetry.scripts]
+liamindex = "app.cli:main"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
