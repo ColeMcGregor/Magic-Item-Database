@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Entry
 from .parsers.base import choose_parser, RawRow, ParserError
+from .scraper import RedditScraper
 
 
 """
@@ -29,12 +30,17 @@ def _parse_attunement(value: str) -> tuple[bool, str | None]:
       "Yes"          -> (True, None)
       "Yes - Dex 15" -> (True, "Dex 15")
     """
+
+    # if the value is missing, return false and none
     if not value or value.strip().lower() == "missing":
         return (False, None)
 
+    # strip the value
     val = value.strip()
+    # if the value starts with no, return false and none
     if val.lower().startswith("no"):
         return (False, None)
+    # if the value starts with yes, return true and the criteria
     if val.lower().startswith("yes"):
         parts = val.split("-", 1)
         if len(parts) == 2:
@@ -73,20 +79,27 @@ def import_file(path: str | Path, *, scrape: bool = False, default_image: str | 
         for row in rows:
             # parse the attunement, getting back a tuple of (required, criteria)
             attune_required, attune_criteria = _parse_attunement(row["Attunement"])
-            # scrape the description
-            description = RedditScraper.fetch_description(row["Link"])
+            # scrape the link, retrieving title, type, rarity, attunement, description, and image url
+            # use these to both check against csv values but also to fill in missing values
+            scraped = {}
+            if scrape and row["Link"] and "reddit" in row["Link"]:
+                try:
+                    scraped = RedditScraper.fetch_post_data(row["Link"])  # <-- call it here
+                except Exception as e:
+                    # optional: log and keep going
+                    print(f"[scrape warn] {row['Name']}: {e}")
+                    scraped = {}
 
-            # create the entry
             entry = Entry(
-                # fill in the entry
-                name=row["Name"] if row["Name"] else "MISSING",
-                type=row["Type"] if row["Type"] else "MISSING",
-                rarity=row["Rarity"] if row["Rarity"] else "MISSING",
-                attunement_required=attune_required,
-                attunement_criteria=attune_criteria,
-                source_link=row["Link"] or None,
-                description=description or None,          #filled by scraper or if none left as none
-                image_path=default_image,  # placeholder
+                name = (scraped.get("title") or row["Name"] or "MISSING"),
+                type = (row["Type"] or "MISSING"),
+                rarity = (scraped.get("rarity") or row["Rarity"] or "MISSING"),
+                attunement_required = attune_required,
+                attunement_criteria = attune_criteria,
+                source_link = (row["Link"] or None),
+                description = scraped.get("description") or None,
+                # assuming you add `image_url` to Entry (recommended)
+                image_url = scraped.get("image_url") or None,
             )
             # add the entry to the session
             session.add(entry)
