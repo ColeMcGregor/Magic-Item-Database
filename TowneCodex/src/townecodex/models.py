@@ -3,7 +3,7 @@ from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship
 
 """
-These are data models for the LiamIndex database.
+These are data models for the Towne Codex database.
 these are for the entries table and generators table
 
 author: Cole McGregor

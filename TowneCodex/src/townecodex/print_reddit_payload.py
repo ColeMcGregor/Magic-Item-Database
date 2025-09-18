@@ -18,7 +18,7 @@ date: 2025-09-18
 version: 0.3.0
 '''
 
-UA = "liamindex-scraper/0.1"
+UA = "townecodex-scraper/0.1"
 
 def best_image_url(post_data: dict) -> str | None:
     preview = post_data.get("preview") or {}

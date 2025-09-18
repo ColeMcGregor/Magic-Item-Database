@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "liamindex"
+name = "townecodex"
 version = "0.1.0"
-description = "LiamIndex: a system for importing, storing, and generating item inventories (shops, NPCs, enemies, chests)."
+description = "TowneCodex: a system for importing, storing, and generating item inventories (shops, NPCs, enemies, chests)."
 authors = ["ColeMcGregor <gc28mcgr@siena.edu>"]
 readme = "README.md"
 packages = [{ include = "app", from = "src" }]
@@ -31,7 +31,7 @@ black = "^24.0"
 mypy = "^1.10"
 
 [tool.poetry.scripts]
-liamindex = "app.cli:main"
+townecodex = "app.cli:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -1,5 +1,5 @@
 """
-LiamIndex package initializer.
+Towne Codex package initializer.
 
 This sets up environment loading and exposes key classes/functions
 for convenience imports.

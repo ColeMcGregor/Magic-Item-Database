@@ -1,5 +1,5 @@
 """
-Parser strategy base types for LiamIndex.
+Parser strategy base types for Towne Codex.
 
 - RawRow: canonical row shape expected from any parser strategy
 - ParserStrategy: Protocol every parser must implement

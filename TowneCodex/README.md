@@ -1,6 +1,6 @@
-# LiamIndex
+# Towne Codex
 
-**LiamIndex** is a Python-based system for importing, storing, and generating item inventories — perfect for building shops, NPC gear, enemy loot, and treasure chests for tabletop or digital games.
+**Towne Codex** is a Python-based system for importing, storing, and generating item inventories — perfect for building shops, NPC gear, enemy loot, and treasure chests for tabletop or digital games.
 
 It supports data import from CSV/XLSX files, enrichment via the Reddit API (for descriptions/images), and flexible querying/generation based on rarity, type, attunement, and budget rules.
 
@@ -26,6 +26,6 @@ It has a scraping program that grabs information about an item through a combina
 
 ### Setup
 ```bash
-git clone https://github.com/[YourUsernameGoesHere]/liamindex.git
-cd liamindex
+git clone https://github.com/[YourUsernameGoesHere]/townecodex.git
+cd townecodex
 poetry install

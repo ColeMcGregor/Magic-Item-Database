@@ -23,7 +23,7 @@ version: 0.1.0
 # Default: SQLite in project root
 # Override with DATABASE_URL env var (e.g., postgres://user:pass@localhost/dbname)
 # -----------------------------------------------------------------------------
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///liamindex.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///townecodex.db")
 
 # -----------------------------------------------------------------------------
 # Engine & Session

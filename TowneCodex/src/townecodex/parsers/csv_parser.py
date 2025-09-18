@@ -1,5 +1,5 @@
 """
-CSV parser for LiamIndex.
+CSV parser for Towne Codex.
 
 Reads a CSV with columns:
   Name, Type, Rarity, Attunement, Link

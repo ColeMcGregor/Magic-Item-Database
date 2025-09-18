@@ -10,7 +10,7 @@ from .scraper import RedditScraper
 
 
 """
-Importer pipeline for LiamIndex.
+Importer pipeline for Towne Codex.
 
 - Parses a CSV/XLSX file using the ParserStrategy system.
 - Normalizes attunement ("Yes - criteria" -> required + criteria string).

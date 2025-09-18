@@ -7,14 +7,14 @@ import markdown
 
 
 """
-Scraper for LiamIndex.
+Scraper for townecodex.
 
 - Scrapes a Reddit post for title, rarity, attunement, description, and image url
 - also 
 """
 
 class RedditScraper:
-    UA = "liamindex-scraper/0.1"
+    UA = "townecodex-scraper/0.1"
 
     # --- helpers ----------------------------------------------------
 
