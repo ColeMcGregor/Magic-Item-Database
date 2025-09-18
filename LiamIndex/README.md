@@ -4,6 +4,8 @@
 
 It supports data import from CSV/XLSX files, enrichment via the Reddit API (for descriptions/images), and flexible querying/generation based on rarity, type, attunement, and budget rules.
 
+It has a scraping program that grabs information about an item through a combination of a link and a Reddit Developer account using PRAW, reddits API. Can grab item description and item image.
+
 ---
 
 ## Features
