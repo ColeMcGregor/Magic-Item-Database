@@ -36,7 +36,11 @@ class Entry(Base):
     # Links & description
     source_link = Column(String, nullable=True, unique=True)       # Reddit or external link, shouldnt match any other source link
     description = Column(Text, nullable=True)        # scraped or manual text
-    image_path = Column(String, nullable=True)       # path to image file
+    image_url = Column(String, nullable=True)  # scraped direct link
+
+
+    #flags
+    value_updated=Column(Boolean, default=False) #used to track if the value of the item has been updated from original generated value
 
     # Relationships
     # inventories = relationship("Inventory", back_populates="entry")
