@@ -40,7 +40,6 @@ class ParserStrategy(Protocol):
 
 class ParserError(Exception):
     """Raised when a parser encounters an unrecoverable problem."""
-    print(f"ParserError: {message}")
 
 
 # ---- Factory -------------------------------------------------------------------

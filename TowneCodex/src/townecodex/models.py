@@ -1,10 +1,10 @@
 from __future__ import annotations
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, DateTime, func, UniqueConstraint
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy import String, Text, Boolean, ForeignKey, DateTime, func, UniqueConstraint, Integer
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 """
 These are data models for the Towne Codex database.
-these are for the tables in the database.
+they are for the tables in the database.
 they include:
 
 - Entry
@@ -12,13 +12,15 @@ they include:
 - Inventory
 - InventoryItem
 
-
 author: Cole McGregor
 date: 2025-09-17
 version: 0.1.0
 """
-# a declarative base is used to create the models.
-Base = declarative_base()
+
+
+# Declarative base for SQLAlchemy 2.x
+class Base(DeclarativeBase):
+    pass
 
 
 class Entry(Base):
@@ -28,29 +30,32 @@ class Entry(Base):
     """
     __tablename__ = "entries"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
     # Core fields
-    name = Column(String, nullable=False, index=True)
-    type = Column(String, nullable=False)
-    rarity = Column(String, nullable=False)
-    value = Column(Integer, nullable=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    rarity: Mapped[str] = mapped_column(String, nullable=False)
+    value: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Attunement
-    attunement_required = Column(Boolean, default=False)
-    attunement_criteria = Column(String, nullable=True)
+    attunement_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    attunement_criteria: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Links & description
-    source_link = Column(String, nullable=True, unique=True)       # Reddit or external link, shouldnt match any other source link
-    description = Column(Text, nullable=True)        # scraped or manual text
-    image_url = Column(String, nullable=True)  # scraped direct link
+    source_link: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
-
-    #flags
-    value_updated=Column(Boolean, default=False) #used to track if the value of the item has been updated from original generated value
+    # Flags
+    value_updated: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
-    # inventories = relationship("Inventory", back_populates="entry")
+    inventory_items: Mapped[list["InventoryItem"]] = relationship(
+        back_populates="entry",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
         return f"<Entry(id={self.id}, name={self.name!r}, rarity={self.rarity!r})>"
@@ -62,51 +67,39 @@ class GeneratorDef(Base):
     """
     __tablename__ = "generators"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False, unique=True)   # e.g., "Shop-SmallTown"
-    context = Column(String, nullable=False)             # e.g., "shop", "party", "monster"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    context: Mapped[str] = mapped_column(String, nullable=False)
 
     # Bounds and rules
-    min_items = Column(Integer, nullable=True)
-    max_items = Column(Integer, nullable=True)
-    budget = Column(Integer, nullable=True)
-    rarity_bias = Column(String, nullable=True)          # e.g., "Common+", "Rare+ only"
+    min_items: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_items: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rarity_bias: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Relationships
-    
-
-    # --- Inventory & InventoryItem -------------------------------------------------
-# Requires: from sqlalchemy import DateTime, func, UniqueConstraint
 
 class InventoryItem(Base):
     """
     Join table (association object) between Inventory and Entry with extra fields.
-    - quantity: how many of this Entry are in the inventory
-    - unit_value: optional snapshot of Entry.value taken when added (can be None to use live Entry.value)
     """
     __tablename__ = "inventory_items"
     __table_args__ = (UniqueConstraint("inventory_id", "entry_id", name="uq_inventory_entry"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    inventory_id = Column(Integer, ForeignKey("inventories.id", ondelete="CASCADE"), index=True, nullable=False)
-    entry_id = Column(Integer, ForeignKey("entries.id", ondelete="CASCADE"), index=True, nullable=False)
+    inventory_id: Mapped[int] = mapped_column(ForeignKey("inventories.id", ondelete="CASCADE"), index=True, nullable=False)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("entries.id", ondelete="CASCADE"), index=True, nullable=False)
 
-    quantity = Column(Integer, nullable=False, default=1)
-    unit_value = Column(Integer, nullable=True)  # snapshot at add-time; if None, falls back to Entry.value
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    unit_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Relationships
-    inventory = relationship("Inventory", back_populates="items")
-    entry = relationship("Entry", back_populates="inventory_items")
+    inventory: Mapped["Inventory"] = relationship(back_populates="items")
+    entry: Mapped["Entry"] = relationship(back_populates="inventory_items")
 
-    # --- Computed helpers (not persisted) ---
+    # Computed helpers
     @property
     def effective_unit_value(self) -> int:
-        """
-        The price used for totals:
-        - If a snapshot (unit_value) exists, use it.
-        - Otherwise, use the Entry.value (0 if missing).
-        """
         return self.unit_value if self.unit_value is not None else int(self.entry.value or 0)
 
     @property
@@ -123,47 +116,27 @@ class Inventory(Base):
     """
     __tablename__ = "inventories"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False, index=True)        # e.g., "Barovia General Store – Sep 20"
-    context = Column(String, nullable=True)                  # e.g., "shop", "loot", "npc"
-    budget = Column(Integer, nullable=True)                  # optional planning budget
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    context: Mapped[str | None] = mapped_column(String, nullable=True)
+    budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    # Items in this inventory
-    items = relationship(
-        "InventoryItem",
+    # Relationships
+    items: Mapped[list["InventoryItem"]] = relationship(
         back_populates="inventory",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
 
-    # --- Helpers ---
     def add_entry(self, entry: "Entry", *, quantity: int = 1, unit_value: int | None = None) -> InventoryItem:
-        """
-        Append an Entry to this inventory with a quantity and optional unit value snapshot.
-        If unit_value is None, the item's current Entry.value will be used for totals at read time.
-        """
         ii = InventoryItem(entry=entry, quantity=quantity, unit_value=unit_value)
         self.items.append(ii)
         return ii
 
     @property
     def total_value(self) -> int:
-        """
-        Sum of item totals. Uses each item's effective_unit_value (snapshot or live).
-        """
         return sum(ii.total_value for ii in self.items)
 
     def __repr__(self) -> str:
         return f"<Inventory(id={self.id}, name={self.name!r}, items={len(self.items)})>"
-
-
-# --- Back-populate on Entry (where an item appears) ----------------------------
-# If Entry is defined above, we can attach the reverse relationship here.
-Entry.inventory_items = relationship(  # type: ignore[attr-defined]
-    "InventoryItem",
-    back_populates="entry",
-    cascade="all, delete-orphan",
-    passive_deletes=True,
-)
-
