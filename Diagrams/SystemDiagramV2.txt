@@ -1,0 +1,256 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam packageStyle rectangle
+
+' ---------------- UI Layer (GUI + CLI) ----------------
+package "UI Layer" {
+  class MainApp {
+    +run()
+  }
+
+  class ImportScreen {
+    +chooseFile()
+    +selectParser()
+    +startImport()
+  }
+
+  class ManualEntryScreen {
+    +displayForm()
+    +submitEntry()
+  }
+
+  class GeneratorScreen {
+    +listGenerators()
+    +runGenerator()
+    +createGenerator()
+  }
+
+  class QueryScreen {
+    +searchByCriteria()
+    +filterResults()
+    +autocomplete(prefix)
+  }
+
+  class EntryDetailScreen {
+    +displayEntry()
+    +renderMarkdown()
+    +showImage()
+  }
+
+  class CLI as "cli.py <<UI>>" {
+    +importFile(path, scrape, default_image)
+    +search(filters)
+    +show(id)
+  }
+}
+
+' ---------------- Controllers ----------------
+package "Controllers" {
+  class ImportController {
+    +importFile(file, scrape=False, default_image=None)
+  }
+
+  class ManualEntryController {
+    +createEntry(data)
+  }
+
+  class GeneratorController {
+    +runGenerator(id)
+    +createGenerator(rules)
+  }
+
+  class QueryController {
+    +search(filters)
+    +suggest(prefix,k=10)
+  }
+
+  class EntryController {
+    +getEntry(id)
+  }
+}
+
+' ---------------- Importing / Services ----------------
+package "Importing" {
+  class Importer as "importer.py" {
+    +import_file(path, *, scrape=False, default_image=None) : int
+  }
+}
+
+' ---------------- Parsing & Scraping ----------------
+package "Parsing & Scraping" {
+  interface ParserStrategy <<Protocol>> {
+    +parse(path) : Iterable<RawRow>
+    +name() : str
+  }
+  class CSVParser
+  class XLSXParser
+  class RawRow <<TypedDict>>
+  class ParserError <<Exception>>
+
+  class BaseModule as "base.py" {
+    +choose_parser(path) : ParserStrategy
+  }
+
+  class RedditScraper as "scraper.RedditScraper" {
+    +fetch_post_data(url) : dict
+    --
+    +best_image_url(post_data) : str?
+    +clean_description_raw(text) : str
+    +clean_title(title) : str
+  }
+}
+
+' ---------------- Search (Trie) ----------------
+package "Search" {
+  class SearchService {
+    +build_index()
+    +add(entry)
+    +update(entry)
+    +remove(entry)
+    +suggest(prefix,k=10) : List<(name,id)>
+  }
+
+  class TrieIndex {
+    +add(key,id)
+    +remove(key,id)
+    +suggest(prefix,k=10) : List<(key,id)>
+  }
+}
+
+' ---------------- Persistence ----------------
+package "Persistence" {
+  class EntryRepository {
+    +get_by_id(id) : Entry
+    +get_by_source_link(link) : Entry?
+    +upsert_entry(data: dict) : Entry
+    +update_price(id,new_value) : None  ' flips value_updated=True
+    +search(filters,page=1,size=50) : List<Entry>
+    +list(page=1,size=50) : List<Entry>
+  }
+
+  class GeneratorRepository {
+    +insert(generator: GeneratorDef)
+    +get_by_id(id) : GeneratorDef
+    +list_all() : List<GeneratorDef>
+  }
+
+  class DB as "db.py" {
+    +SessionLocal() : Session
+    +Base
+  }
+}
+
+' ---------------- Business / Query ----------------
+package "Business Logic" {
+  class QueryService {
+    +search(filters) : List<CardDTO>
+    +get_entry_card(id) : CardDTO
+  }
+
+  class CardDTO {
+    +title : str
+    +rarity : str
+    +attunement_required : bool
+    +attunement_criteria : str?
+    +description_md : str?
+    +description_html : str?
+    +image_url : str?
+    +value_display : str   ' "*123" if not value_updated else "123"
+  }
+
+  class MarkdownRenderer <<lib>> {
+    +render(md:str) : str
+  }
+
+  class GeneratorEngine {
+    +buildInventory(generator: GeneratorDef) : Inventory
+  }
+}
+
+' ---------------- Data Models ----------------
+package "Data Models" {
+  class Entry {
+    +id : Int
+    +name : String
+    +type : String
+    +rarity : String
+    +value : Int?
+    +value_updated : Boolean
+    +attunement_required : Boolean
+    +attunement_criteria : String?
+    +source_link : String  ' unique
+    +description : Text?
+    +image_url : String?
+  }
+
+  class GeneratorDef {
+    +id : Int
+    +name : String
+    +context : String
+    +min_items : Int?
+    +max_items : Int?
+    +budget : Int?
+    +rarity_bias : String?
+  }
+
+  class Inventory {
+    +items : List<Entry>
+    +totalValue : Int
+  }
+}
+
+' ---------------- Relationships (labeled arrows) ----------------
+
+' UI navigation
+MainApp --> ImportScreen : navigates
+MainApp --> ManualEntryScreen : navigates
+MainApp --> GeneratorScreen : navigates
+MainApp --> QueryScreen : navigates
+MainApp --> EntryDetailScreen : navigates
+
+' UI -> Controllers
+ImportScreen --> ImportController : invokes import(file,scrape,...)
+ManualEntryScreen --> ManualEntryController : submits form(data)
+GeneratorScreen --> GeneratorController : manage generators
+QueryScreen --> QueryController : run searches\nand autocomplete
+EntryDetailScreen --> EntryController : request details
+CLI --> Importer : calls import_file(path,...)      ' CLI uses service directly
+CLI --> QueryController : runs search/show          ' reuse read-side APIs
+
+' Controllers -> Services/Repos
+ImportController --> Importer : delegates\nbatch import
+ManualEntryController --> EntryRepository : saves entry
+ManualEntryController --> SearchService : add/update entry in trie
+GeneratorController --> GeneratorRepository : save/load
+GeneratorController --> GeneratorEngine : build inventory
+EntryController --> QueryService : get_entry_card(id)
+QueryController --> QueryService : search(filters)
+QueryController --> SearchService : suggest(prefix,k)
+
+' Importer pipeline
+Importer --> BaseModule : choose_parser(path)
+BaseModule --> ParserStrategy : returns implementation
+CSVParser ..|> ParserStrategy
+XLSXParser ..|> ParserStrategy
+Importer --> ParserStrategy : iterates parse(path)\nyields RawRow
+ParserStrategy ..> RawRow : yields rows
+ParserStrategy ..> ParserError : may raise
+Importer --> RedditScraper : fetch_post_data(link)\nwhen scrape=True
+Importer --> EntryRepository : upsert_entry(data)
+EntryRepository --> SearchService : notifies add/update\n(after commit)
+
+' Query side
+QueryService --> EntryRepository : fetch entries
+QueryService --> MarkdownRenderer : render(description_md) -> html
+SearchService --> TrieIndex : stores keys\nand suggests by prefix
+
+' Persistence
+EntryRepository --> DB : uses SessionLocal\nqueries/commits
+GeneratorRepository --> DB : uses SessionLocal
+
+' Models mapped to DB Base (implicit)
+Entry --> DB : mapped via Base
+GeneratorDef --> DB : mapped via Base
+
+@enduml
