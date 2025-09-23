@@ -1,0 +1,63 @@
+# --- Python bytecode & caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# --- Testing / coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# --- Type checkers / linters ---
+.mypy_cache/
+.pytype/
+.ruff_cache/
+.dmypy.json
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Editor / IDE stuff ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+
+# --- Environment / secrets ---
+.env
+.env.*
+*.env
+
+# --- SQLite / local data (keep if you want DB in repo) ---
+townecodex.db
+*.db
+
+# --- Logs / temp ---
+*.log
+*.tmp
+tmp/
+temp/
+
+# --- Poetry (keep lockfile tracked!) ---
+# (Do NOT ignore poetry.lock — commit it)
+# poetry.lock
