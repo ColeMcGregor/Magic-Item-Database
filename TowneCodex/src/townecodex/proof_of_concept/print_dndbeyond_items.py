@@ -13,7 +13,7 @@ from playwright.sync_api import sync_playwright
 
 UA = "townecodex-scraper/0.1"
 
-GOOGLE_API_KEY=AIzaSyC3_LDGpnLusmSj56mt-FmWyb2IySMCKtI;
+GOOGLE_API_KEY=00
 GOOGLE_CSE_CX=37f428b9c34bf436b
 
 import re, html, os, time, requests
