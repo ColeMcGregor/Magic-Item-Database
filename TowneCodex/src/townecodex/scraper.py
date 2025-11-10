@@ -88,7 +88,41 @@ class RedditScraper:
         title = cls.clean_title(post_data.get("title", "Unknown Title"))
         image_url = cls.best_image_url(post_data)
 
-        # find griff-mac comment
+        # --- helpers (local to keep patch minimal) ----------------------
+        # Matches: "<type-or-slot>, <rarity> (optional-parens)"
+        # Examples:
+        #   "Wondrous item, common (requires attunement by a wizard)"
+        #   "Armor (shield), common"
+        #   "Potion, common or very rare"
+        rar_att_re = re.compile(
+            r"""^\s*
+                (?P<type>[^,()]+(?:\s*\([^)]*\))?)   # "Wondrous item" or "Armor (shield)"
+                \s*,\s*
+                (?P<rarity>[^()]+?)                  # "common" / "rare" / "common or very rare"
+                (?:\s*\(\s*(?P<paren>[^)]*)\s*\))?   # optional: "(requires attunement ...)"
+                \s*$
+            """,
+            re.IGNORECASE | re.VERBOSE,
+        )
+
+        def parse_rarity_attunement(italic_line: str) -> tuple[str, str]:
+            line = italic_line.strip("*_ ").strip()
+            m = rar_att_re.match(line)
+            if not m:
+                # Fallback: last comma-part is probably rarity; no attunement
+                parts = [p.strip() for p in line.split(",")]
+                rarity_guess = parts[-1] if parts else "Unknown"
+                return rarity_guess, "None"
+
+            rarity_txt = m.group("rarity").strip()
+            paren = (m.group("paren") or "").strip()
+            if "attun" in paren.lower():
+                attun_txt = paren  # e.g., "requires attunement by a wizard"
+            else:
+                attun_txt = "None"
+            return rarity_txt, attun_txt
+
+        # --- find griff-mac comment ------------------------------------
         description = None
         rarity, attunement = None, None
         comments = data[1]["data"]["children"]
@@ -100,19 +134,17 @@ class RedditScraper:
                 if raw_body:
                     description = cls.clean_description_raw(raw_body)
 
-                    # pull rarity/attunement from 2nd line if present
+                    # Pull rarity/attunement from 2nd non-empty line if present
                     lines = [ln.strip() for ln in description.splitlines() if ln.strip()]
                     if len(lines) >= 2:
                         italic_line = lines[1].strip("*_")
-                        rarity = italic_line
-                        if "attunement" in italic_line.lower():
-                            attunement = italic_line
+                        rarity, attunement = parse_rarity_attunement(italic_line)
                 break
 
         return {
             "title": title,
-            "rarity": rarity or "Unknown",
-            "attunement": attunement or "None",
+            "rarity": (rarity or "Unknown").strip(),
+            "attunement": (attunement or "None").strip(),
             "description": description or None,
             "image_url": image_url or None,
         }
