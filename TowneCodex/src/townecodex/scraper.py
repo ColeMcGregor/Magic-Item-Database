@@ -88,12 +88,7 @@ class RedditScraper:
         title = cls.clean_title(post_data.get("title", "Unknown Title"))
         image_url = cls.best_image_url(post_data)
 
-        # --- helpers (local to keep patch minimal) ----------------------
-        # Matches: "<type-or-slot>, <rarity> (optional-parens)"
-        # Examples:
-        #   "Wondrous item, common (requires attunement by a wizard)"
-        #   "Armor (shield), common"
-        #   "Potion, common or very rare"
+        # --- helpers -------------------------------------------------------
         rar_att_re = re.compile(
             r"""^\s*
                 (?P<type>[^,()]+(?:\s*\([^)]*\))?)   # "Wondrous item" or "Armor (shield)"
@@ -109,7 +104,6 @@ class RedditScraper:
             line = italic_line.strip("*_ ").strip()
             m = rar_att_re.match(line)
             if not m:
-                # Fallback: last comma-part is probably rarity; no attunement
                 parts = [p.strip() for p in line.split(",")]
                 rarity_guess = parts[-1] if parts else "Unknown"
                 return rarity_guess, "None"
@@ -122,7 +116,64 @@ class RedditScraper:
                 attun_txt = "None"
             return rarity_txt, attun_txt
 
-        # --- find griff-mac comment ------------------------------------
+        def _title_case_keep_connectors(s: str) -> str:
+            if not s:
+                return s
+            parts = s.split()
+            keep_lower = {"or", "and", "of"}
+            out = []
+            for i, w in enumerate(parts):
+                lw = w.lower()
+                if lw in keep_lower:
+                    out.append(lw)
+                else:
+                    out.append(lw.capitalize() if len(w) > 1 else lw.upper())
+            return " ".join(out)
+
+        def normalize_rarity(r: str | None) -> str:
+            if not r:
+                return "Unknown"
+            # collapse spaces, lowercase, split on 'or' and title case each segment
+            r_low = " ".join(r.split()).lower()
+            segs = [seg.strip() for seg in r_low.split(" or ")]
+            segs = [_title_case_keep_connectors(seg) for seg in segs if seg]
+            return " or ".join(segs) if segs else "Unknown"
+
+        def normalize_attunement(att: str | None) -> str:
+            """
+            Map:
+            None/No/Missing -> "None"
+            "requires attunement" -> "Requires Attunement"
+            "requires attunement by a wizard" -> "Requires Attunement (Wizard)"
+            "Requires Attunement (Paladin)" -> "Requires Attunement (Paladin)"
+            """
+            if not att:
+                return "None"
+            s = att.strip()
+            low = s.lower()
+            if low in {"none", "no", "missing", "n/a"} or low.startswith("no"):
+                return "None"
+            if "attun" in low:
+                # Prefer parentheses if present
+                m = re.search(r"\(([^)]+)\)", s)
+                if m:
+                    crit = m.group(1).strip()
+                else:
+                    # Or "... by <criteria>"
+                    m2 = re.search(r"\bby\s+(.+)$", s, flags=re.IGNORECASE)
+                    if m2:
+                        crit = m2.group(1).strip()
+                    else:
+                        crit = ""
+                # Strip leading articles and normalize connectors
+                crit = re.sub(r"^(?:an?\s+)", "", crit, flags=re.IGNORECASE).strip()
+                crit_norm = _title_case_keep_connectors(crit)
+                return "Requires Attunement" if not crit_norm else f"Requires Attunement ({crit_norm})"
+            # Fallback: treat any other non-empty text as criteria
+            crit_norm = _title_case_keep_connectors(s)
+            return f"Requires Attunement ({crit_norm})"
+
+        # --- find griff-mac comment --------------------------------------
         description = None
         rarity, attunement = None, None
         comments = data[1]["data"]["children"]
@@ -133,18 +184,20 @@ class RedditScraper:
                 raw_body = c["data"].get("body")
                 if raw_body:
                     description = cls.clean_description_raw(raw_body)
-
-                    # Pull rarity/attunement from 2nd non-empty line if present
                     lines = [ln.strip() for ln in description.splitlines() if ln.strip()]
                     if len(lines) >= 2:
                         italic_line = lines[1].strip("*_")
                         rarity, attunement = parse_rarity_attunement(italic_line)
                 break
 
+        # --- normalized outputs ------------------------------------------
+        rarity_norm = normalize_rarity((rarity or "Unknown").strip())
+        attune_norm = normalize_attunement((attunement or "None").strip())
+
         return {
             "title": title,
-            "rarity": (rarity or "Unknown").strip(),
-            "attunement": (attunement or "None").strip(),
+            "rarity": rarity_norm,
+            "attunement": attune_norm,
             "description": description or None,
             "image_url": image_url or None,
         }
