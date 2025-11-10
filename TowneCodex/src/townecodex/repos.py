@@ -2,28 +2,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
-
+from typing import Callable, Optional, Sequence, Iterable, Dict, Any, Tuple, List
 from contextlib import contextmanager
+
 from sqlalchemy import select, update, func, delete
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from .db import SessionLocal
 from .models import Entry, GeneratorDef
 
 
-# --- Search filters for Entries -------------------------------------------------
+# --- Search filters ------------------------------------------------------------
 
 @dataclass
 class EntryFilters:
-    """
-    Typed filters for searching entries.
-    - name_contains: case-insensitive substring over Entry.name, used in tandem with a b-tree index on Entry.name and the trie index on Entry.name
-    - type_equals: exact match on Entry.type
-    - rarity_in: list/tuple of allowed rarities (exact)
-    - attunement_required: True/False to filter, None to ignore
-    - text: naive contains search over name + description (case-insensitive)
-    """
     name_contains: Optional[str] = None
     type_equals: Optional[str] = None
     rarity_in: Optional[Sequence[str]] = None
@@ -31,36 +24,53 @@ class EntryFilters:
     text: Optional[str] = None
 
 
-# --- Repo base utilities --------------------------------------------------------
+# --- Session scope -------------------------------------------------------------
 
 @contextmanager
 def session_scope(session_factory=SessionLocal):
-    """
-    Provide a transactional scope around a series of operations.
-    - Commits if all is well
-    - Rolls back on exception
-    - Closes the session
-    """
-    session: Session = session_factory()
+    s: Session = session_factory()
     try:
-        yield session
-        session.commit()
+        yield s
+        s.commit()
     except Exception:
-        session.rollback()
+        s.rollback()
         raise
     finally:
-        session.close()
+        s.close()
 
 
-# --- Entry Repository -----------------------------------------------------------
+# --- Internal helpers ----------------------------------------------------------
+
+def _trim(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    t = s.strip()
+    return t if t else None
+
+def _assign_if_present_nonempty(obj: object, field: str, data: Dict[str, Any]) -> None:
+    if field not in data:
+        return
+    v = data[field]
+    if isinstance(v, str):
+        v = _trim(v)
+    if v is None or v == "":
+        return
+    setattr(obj, field, v)
+
+def _coerce_bool(v: Any, default: bool = False) -> bool:
+    if v is None:
+        return default
+    return bool(v)
+
+
+# --- Entry Repository ----------------------------------------------------------
 
 class EntryRepository:
     """
     Data-access boundary for Entry objects.
-    - Hides ORM/session details
-    - Enforces upsert/dedup rules
-    - Owns invariants like price update flag
-    - Optionally notifies a SearchService after writes
+    - Upsert by source_link; fallback to (name,type) when link is absent and unique.
+    - Never clobber existing fields with empty/whitespace values.
+    - Trims all incoming strings.
     """
 
     def __init__(
@@ -73,106 +83,182 @@ class EntryRepository:
         self._on_entry_changed = on_entry_changed
         self._on_entry_deleted = on_entry_deleted
 
-    # ---- helpers ---------------------------------------------------------------
+    # -- notifications ----------------------------------------------------------
 
-    def _notify_changed(self, entry: Entry):
+    def _notify_changed(self, entry: Entry) -> None:
         if self._on_entry_changed:
             try:
                 self._on_entry_changed(entry)
             except Exception:
-                pass  # don't break writes if the notifier fails
+                pass
 
-    def _notify_deleted(self, entry_id: int):
+    def _notify_deleted(self, entry_id: int) -> None:
         if self._on_entry_deleted:
             try:
                 self._on_entry_deleted(entry_id)
             except Exception:
                 pass
 
-    # ---- basic reads -----------------------------------------------------------
+    # -- basic reads ------------------------------------------------------------
 
     def get_by_id(self, entry_id: int) -> Optional[Entry]:
         with session_scope(self._session_factory) as s:
             return s.get(Entry, entry_id)
 
     def get_by_source_link(self, link: str) -> Optional[Entry]:
+        link = _trim(link) or ""
         if not link:
             return None
         with session_scope(self._session_factory) as s:
-            stmt = select(Entry).where(Entry.source_link == link.strip())
+            stmt = select(Entry).where(Entry.source_link == link)
             return s.execute(stmt).scalar_one_or_none()
 
-    # ---- upsert & insert -------------------------------------------------------
+    # -- upsert/insert ----------------------------------------------------------
 
-    def upsert_entry(self, data: dict) -> Entry:
+    def upsert_entry(self, data: Dict[str, Any]) -> Entry:
         """
-        Idempotent write:
-        - If source_link is present and matches an existing Entry -> update selected fields.
-        - Else if (name, type) matches exactly one Entry and no source_link -> update that.
-        - Else -> insert a new Entry.
-
-        Expected keys you might provide:
+        Expected keys (all optional; strings will be trimmed):
           name, type, rarity,
-          attunement_required, attunement_criteria,
+          attunement_required (bool), attunement_criteria,
           source_link,
-          description,
-          image_url,             # <--- URL only (no image_path support)
-          value, value_updated
+          description, image_url,
+          value (int), value_updated (bool)
         """
+        # Pre-trim the common string fields up front
+        for k in ("name", "type", "rarity", "attunement_criteria", "source_link", "description", "image_url"):
+            if k in data and isinstance(data[k], str):
+                data[k] = _trim(data[k])
+
         with session_scope(self._session_factory) as s:
             target: Optional[Entry] = None
-            link = (data.get("source_link") or "").strip()
+            link = data.get("source_link") or ""
 
             if link:
                 target = s.execute(select(Entry).where(Entry.source_link == link)).scalar_one_or_none()
             else:
-                nm = (data.get("name") or "").strip()
-                tp = (data.get("type") or "").strip()
+                nm = data.get("name") or ""
+                tp = data.get("type") or ""
                 if nm and tp:
                     matches = s.execute(select(Entry).where(Entry.name == nm, Entry.type == tp)).scalars().all()
                     if len(matches) == 1:
                         target = matches[0]
 
             if target is None:
-                # INSERT
+                # INSERT (defaults applied; no empty sentinels)
                 target = Entry(
-                    name=data.get("name") or "MISSING",
-                    type=data.get("type") or "MISSING",
-                    rarity=data.get("rarity") or "MISSING",
-                    attunement_required=bool(data.get("attunement_required")) if data.get("attunement_required") is not None else False,
+                    name=data.get("name") or "Unknown",
+                    type=data.get("type") or "Unknown",
+                    rarity=data.get("rarity") or "Unknown",
+                    attunement_required=_coerce_bool(data.get("attunement_required"), False),
                     attunement_criteria=data.get("attunement_criteria"),
                     source_link=link or None,
                     description=data.get("description"),
-                    image_url=data.get("image_url"),   # URL only
+                    image_url=data.get("image_url"),
                     value=data.get("value"),
-                    value_updated=bool(data.get("value_updated")) if data.get("value_updated") is not None else False,
+                    value_updated=_coerce_bool(data.get("value_updated"), False),
                 )
                 s.add(target)
-                s.flush()  # populate id
+                try:
+                    s.flush()  # get id; may raise IntegrityError on unique(source_link)
+                except IntegrityError:
+                    s.rollback()
+                    # Race: another transaction inserted this link; retry as update
+                    with session_scope(self._session_factory) as s2:
+                        existing = s2.execute(select(Entry).where(Entry.source_link == link)).scalar_one_or_none()
+                        if existing:
+                            target = self._update_existing_internal(existing, data, s2)
+                        else:
+                            # Extremely unlikely; re-raise to surface the problem
+                            raise
             else:
-                # UPDATE (do not clobber with None/empty)
-                _assign_if_present(target, "name", data)
-                _assign_if_present(target, "type", data)
-                _assign_if_present(target, "rarity", data)
-                _assign_if_present(target, "attunement_required", data)
-                _assign_if_present(target, "attunement_criteria", data)
-                _assign_if_present(target, "description", data)
-                _assign_if_present(target, "image_url", data)  # URL only
+                target = self._update_existing_internal(target, data, s)
 
-                # Value is special: only update if provided; don't flip value_updated here
-                if "value" in data and data["value"] is not None:
-                    target.value = data["value"]
-                if "value_updated" in data and data["value_updated"] is not None:
-                    target.value_updated = bool(data["value_updated"])
-
-        # Notify after commit
+        # Reload in a fresh session for clean instance
         saved = self.get_by_id(target.id)  # type: ignore[arg-type]
         if saved:
             self._notify_changed(saved)
             return saved
         return target  # type: ignore[return-value]
 
-    # ---- price updates ---------------------------------------------------------
+    def _update_existing_internal(self, target: Entry, data: Dict[str, Any], s: Session) -> Entry:
+        # String fields: assign only if non-empty present
+        for fld in ("name", "type", "rarity", "attunement_criteria", "description", "image_url"):
+            _assign_if_present_nonempty(target, fld, data)
+
+        # Booleans: explicit control (do not infer from empty)
+        if "attunement_required" in data and data["attunement_required"] is not None:
+            target.attunement_required = bool(data["attunement_required"])
+
+        # Value semantics
+        if "value" in data and data["value"] is not None:
+            target.value = int(data["value"])
+        if "value_updated" in data and data["value_updated"] is not None:
+            target.value_updated = bool(data["value_updated"])
+
+        s.flush()
+        return target
+
+    def bulk_upsert(self, items: Iterable[Dict[str, Any]]) -> Tuple[int, int]:
+        """
+        Upsert many entries in one transaction.
+        Returns: (created_count, updated_count)
+        """
+        created = 0
+        updated = 0
+        with session_scope(self._session_factory) as s:
+            for data in items:
+                # Trim strings
+                for k in ("name", "type", "rarity", "attunement_criteria", "source_link", "description", "image_url"):
+                    if k in data and isinstance(data[k], str):
+                        data[k] = _trim(data[k])
+
+                link = data.get("source_link") or ""
+                target: Optional[Entry] = None
+                if link:
+                    target = s.execute(select(Entry).where(Entry.source_link == link)).scalar_one_or_none()
+                else:
+                    nm = data.get("name") or ""
+                    tp = data.get("type") or ""
+                    if nm and tp:
+                        rows = s.execute(select(Entry).where(Entry.name == nm, Entry.type == tp)).scalars().all()
+                        if len(rows) == 1:
+                            target = rows[0]
+
+                if target is None:
+                    e = Entry(
+                        name=data.get("name") or "Unknown",
+                        type=data.get("type") or "Unknown",
+                        rarity=data.get("rarity") or "Unknown",
+                        attunement_required=_coerce_bool(data.get("attunement_required"), False),
+                        attunement_criteria=data.get("attunement_criteria"),
+                        source_link=link or None,
+                        description=data.get("description"),
+                        image_url=data.get("image_url"),
+                        value=data.get("value"),
+                        value_updated=_coerce_bool(data.get("value_updated"), False),
+                    )
+                    s.add(e)
+                    try:
+                        s.flush()
+                    except IntegrityError:
+                        s.rollback()
+                        # Retry as update if another tx inserted it
+                        with session_scope(self._session_factory) as s2:
+                            existing = s2.execute(select(Entry).where(Entry.source_link == link)).scalar_one_or_none()
+                            if existing:
+                                self._update_existing_internal(existing, data, s2)
+                                updated += 1
+                            else:
+                                raise
+                    else:
+                        created += 1
+                else:
+                    self._update_existing_internal(target, data, s)
+                    updated += 1
+
+        return created, updated
+
+    # -- price updates ----------------------------------------------------------
 
     def update_price(self, entry_id: int, new_value: int) -> None:
         with session_scope(self._session_factory) as s:
@@ -182,7 +268,7 @@ class EntryRepository:
         if updated:
             self._notify_changed(updated)
 
-    # ---- delete ---------------------------------------------------------------
+    # -- delete -----------------------------------------------------------------
 
     def delete_by_id(self, entry_id: int) -> bool:
         with session_scope(self._session_factory) as s:
@@ -196,38 +282,62 @@ class EntryRepository:
     def clear_all_entries(self) -> int:
         with session_scope(self._session_factory) as s:
             result = s.execute(delete(Entry))
+            # Rely on FK cascade for inventory_items; add DB test to confirm.
             return result.rowcount or 0
 
-    # ---- search & list --------------------------------------------------------
+    # -- search & list ----------------------------------------------------------
 
-    def search(self, filters: EntryFilters, *, page: int = 1, size: int = 50, sort: Optional[str] = None) -> list[Entry]:
+    def search(
+        self,
+        filters: EntryFilters,
+        *,
+        page: int = 1,
+        size: int = 50,
+        sort: Optional[str] = None
+    ) -> List[Entry]:
+        items, _ = self.search_with_total(filters, page=page, size=size, sort=sort)
+        return items
+
+    def search_with_total(
+        self,
+        filters: EntryFilters,
+        *,
+        page: int = 1,
+        size: int = 50,
+        sort: Optional[str] = None
+    ) -> Tuple[List[Entry], int]:
         """
-        Simple search with pagination and optional sort.
-        sort examples: "name", "-name", "rarity", "-value"
+        Returns (items, total_count) for pagination UIs.
         """
         with session_scope(self._session_factory) as s:
-            stmt = select(Entry)
+            base = select(Entry)
 
             if filters.name_contains:
-                stmt = stmt.where(Entry.name.ilike(f"%{filters.name_contains}%"))
+                base = base.where(Entry.name.ilike(f"%{filters.name_contains}%"))
 
             if filters.type_equals:
-                stmt = stmt.where(Entry.type == filters.type_equals)
+                # decide case-sensitivity policy; ilike is friendlier:
+                base = base.where(Entry.type.ilike(filters.type_equals))
 
             if filters.rarity_in:
-                stmt = stmt.where(Entry.rarity.in_(list(filters.rarity_in)))
+                # assume caller passes normalized display rarities
+                base = base.where(Entry.rarity.in_(list(filters.rarity_in)))
 
             if filters.attunement_required is not None:
-                stmt = stmt.where(Entry.attunement_required == filters.attunement_required)
+                base = base.where(Entry.attunement_required == filters.attunement_required)
 
             if filters.text:
                 q = f"%{filters.text}%"
-                # COALESCE avoids NULL swallowing the predicate when description is NULL
-                stmt = stmt.where(
+                base = base.where(
                     (Entry.name.ilike(q)) | (func.coalesce(Entry.description, "").ilike(q))
                 )
 
-            # Sorting
+            # total
+            total = s.execute(
+                select(func.count()).select_from(base.subquery())
+            ).scalar_one()
+
+            # sort
             if sort:
                 desc = sort.startswith("-")
                 key = sort[1:] if desc else sort
@@ -238,20 +348,21 @@ class EntryRepository:
                     "rarity": Entry.rarity,
                     "value": Entry.value,
                 }.get(key, Entry.name)
-                stmt = stmt.order_by(col.desc() if desc else col.asc())
+                base = base.order_by(col.desc() if desc else col.asc())
             else:
-                stmt = stmt.order_by(Entry.name.asc())
+                base = base.order_by(Entry.name.asc(), Entry.id.asc())
 
             page = max(1, page)
             size = max(1, size)
-            stmt = stmt.offset((page - 1) * size).limit(size)
-            return list(s.execute(stmt).scalars().all())
+            stmt = base.offset((page - 1) * size).limit(size)
+            items = list(s.execute(stmt).scalars().all())
+            return items, int(total)
 
-    def list(self, *, page: int = 1, size: int = 50, sort: Optional[str] = None) -> list[Entry]:
-        return self.search(EntryFilters(), page=page, size=size, sort=sort)
+    def list(self, *, page: int = 1, size: int = 50, sort: Optional[str] = None) -> List[Entry]:
+        return self.search(filters=EntryFilters(), page=page, size=size, sort=sort)
 
 
-# --- Generator Repository -------------------------------------------------------
+# --- Generator Repository ------------------------------------------------------
 
 class GeneratorRepository:
     def __init__(self, session_factory=SessionLocal):
@@ -267,11 +378,11 @@ class GeneratorRepository:
         with session_scope(self._session_factory) as s:
             return s.get(GeneratorDef, gen_id)
 
-    def list_all(self) -> list[GeneratorDef]:
+    def list_all(self) -> List[GeneratorDef]:
         with session_scope(self._session_factory) as s:
             stmt = select(GeneratorDef).order_by(GeneratorDef.name.asc())
             return list(s.execute(stmt).scalars().all())
-    
+
     def delete_by_id(self, gen_id: int) -> bool:
         with session_scope(self._session_factory) as s:
             obj = s.get(GeneratorDef, gen_id)
@@ -279,10 +390,3 @@ class GeneratorRepository:
                 return False
             s.delete(obj)
         return True
-
-
-# --- internal helpers -----------------------------------------------------------
-
-def _assign_if_present(obj: object, field: str, data: dict):
-    if field in data and data[field] is not None:
-        setattr(obj, field, data[field])
