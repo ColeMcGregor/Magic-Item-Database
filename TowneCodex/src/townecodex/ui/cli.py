@@ -29,13 +29,13 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 # Ensure DB engine/session are initialized
-from . import db  # noqa: F401
+from .. import db  # noqa: F401
 
-from .importer import import_file
-from .repos import EntryRepository
-from .dto import to_card_dto, to_card_dtos
-from .query import QueryService
-from .renderers.html import HTMLCardRenderer
+from ..importer import import_file
+from ..repos import EntryRepository
+from ..dto import to_card_dto, to_card_dtos
+from ..query import QueryService
+from ..renderers.html import HTMLCardRenderer
 
 
 # ------------------------------------------------------------------------------
@@ -143,6 +143,14 @@ def cmd_list(args) -> int:
     _print_text_rows(entries)
     return 0
 
+def cmd_init_db(_args) -> int:
+    """
+    Initialize the database schema.
+    """
+    from .. import db
+    db.init_db()
+    print("Database initialized successfully.")
+    return 0
 
 def cmd_search(args) -> int:
     """
@@ -221,6 +229,9 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Fallback image URL when none found (optional).",
                     default=None)
     sp.set_defaults(func=cmd_import)
+    # init-db
+    sp = sub.add_parser("init-db", help="Initialize the database schema.")
+    sp.set_defaults(func=cmd_init_db)
 
     # show
     sp = sub.add_parser("show", help="Show a single entry (text to stdout or HTML to file).")
