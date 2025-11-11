@@ -116,18 +116,12 @@ class EntryRepository:
     # -- upsert/insert ----------------------------------------------------------
 
     def upsert_entry(self, data: Dict[str, Any]) -> Entry:
-        """
-        Expected keys (all optional; strings will be trimmed):
-          name, type, rarity,
-          attunement_required (bool), attunement_criteria,
-          source_link,
-          description, image_url,
-          value (int), value_updated (bool)
-        """
         # Pre-trim the common string fields up front
         for k in ("name", "type", "rarity", "attunement_criteria", "source_link", "description", "image_url"):
             if k in data and isinstance(data[k], str):
                 data[k] = _trim(data[k])
+
+        obj_id: Optional[int] = None
 
         with session_scope(self._session_factory) as s:
             target: Optional[Entry] = None
@@ -159,26 +153,32 @@ class EntryRepository:
                 )
                 s.add(target)
                 try:
-                    s.flush()  # get id; may raise IntegrityError on unique(source_link)
+                    s.flush()  # ensure PK populated
                 except IntegrityError:
                     s.rollback()
                     # Race: another transaction inserted this link; retry as update
                     with session_scope(self._session_factory) as s2:
                         existing = s2.execute(select(Entry).where(Entry.source_link == link)).scalar_one_or_none()
                         if existing:
-                            target = self._update_existing_internal(existing, data, s2)
+                            self._update_existing_internal(existing, data, s2)
+                            obj_id = int(existing.id)
                         else:
-                            # Extremely unlikely; re-raise to surface the problem
                             raise
+                else:
+                    obj_id = int(target.id)
             else:
-                target = self._update_existing_internal(target, data, s)
+                self._update_existing_internal(target, data, s)
+                obj_id = int(target.id)
 
-        # Reload in a fresh session for clean instance
-        saved = self.get_by_id(target.id)  # type: ignore[arg-type]
-        if saved:
-            self._notify_changed(saved)
-            return saved
+        # Reload in a fresh session for clean, attached instance
+        if obj_id is not None:
+            saved = self.get_by_id(obj_id)
+            if saved:
+                self._notify_changed(saved)
+                return saved
+        # Fallback (shouldn't happen)
         return target  # type: ignore[return-value]
+
 
     def _update_existing_internal(self, target: Entry, data: Dict[str, Any], s: Session) -> Entry:
         # String fields: assign only if non-empty present
