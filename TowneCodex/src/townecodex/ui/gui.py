@@ -1,215 +1,25 @@
-# src/townecodex/ui/gui.py
+# townecodex/ui/gui.py
 from __future__ import annotations
-
-# threading
-from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool
-
-# domain
-from townecodex.importer import import_file as tc_import_file
-
-
-# --- imports (top of file) ---
 import os
+
+from PySide6.QtCore import Qt, QThreadPool, QStringListModel
 from PySide6.QtGui import QIcon, QAction, QKeySequence
-
-from townecodex.db import init_db, engine  # add this import
-
-from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
     QMessageBox, QSizePolicy
 )
+from PySide6.QtGui import QFontDatabase, QFont
 
-APP_TITLE = "Towne Codex"
-
-STYLE = """
-/* ================= Towne Codex — Medieval Parchment Theme (Qt-safe) ================= */
-
-/* Base */
-QMainWindow, QWidget {
-  background: #F3EEE5;                 /* parchment */
-  color: #1C1713;                       /* ink */
-  font-family: Georgia, "Times New Roman", Times, serif;
-  font-size: 13px;
-}
-
-/* Menubar / Menus */
-QMenuBar {
-  background: #FFFCF4;
-  border-bottom: 1px solid #D8CEBE;
-}
-QMenuBar::item { padding: 4px 10px; }
-QMenuBar::item:selected { background: #F0E6D7; border-radius: 6px; }
-
-QMenu {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  padding: 6px 4px;
-}
-QMenu::separator { height: 1px; background: #C9BFAE; margin: 6px 8px; }
-QMenu::item { padding: 6px 12px; }
-QMenu::item:selected { background: #F0E6D7; }
-
-/* Toolbar */
-QToolBar {
-  background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #FFFDF7, stop:1 #FFFCF4);
-  border-bottom: 1px solid #D8CEBE;
-  padding: 4px 6px;
-  spacing: 6px;
-}
-QToolButton { padding: 4px 8px; border-radius: 8px; }
-QToolButton:hover { background: #F0E6D7; }
-
-/* Panels / Grouping */
-QGroupBox, QFrame[role="panel"] {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  border-radius: 10px;
-}
-QGroupBox { margin-top: 12px; }
-QGroupBox::title {
-  subcontrol-origin: margin; left: 10px; padding: 0 6px;
-  color: #6E5B49; letter-spacing: 0.3px;
-}
-
-/* Labels */
-QLabel[role="caption"] { color: #6E5B49; }
-
-/* Inputs */
-QLineEdit, QComboBox, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  border-radius: 8px;
-  padding: 5px 8px;
-  selection-background-color: #F0E6D7;
-}
-QTextEdit, QPlainTextEdit { padding: 8px 10px; }
-QLineEdit:focus, QComboBox:focus, QTextEdit:focus, QPlainTextEdit:focus,
-QSpinBox:focus, QDoubleSpinBox:focus {
-  border: 1px solid #C7AFA0;
-}
-QComboBox::drop-down {
-  subcontrol-origin: padding;
-  subcontrol-position: top right;
-  width: 26px;
-  border-left: 1px solid #D8CEBE;
-}
-
-/* Buttons */
-QPushButton {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  border-radius: 8px;
-  padding: 5px 12px;
-  min-height: 28px;
-}
-QPushButton:hover { background: #FAF6EE; }
-QPushButton:pressed { background: #EFE7D8; }
-
-/* Variants via dynamic property: primary / royal / danger / flat */
-QPushButton[variant="primary"] {
-  background: #7C1F24;                 /* deep crimson */
-  color: #FFF7F5;
-  border: 1px solid #7C1F24;
-}
-QPushButton[variant="royal"] {
-  background: #2E5AA3;                 /* royal blue */
-  color: #F7FAFF;
-  border: 1px solid #2E5AA3;
-}
-QPushButton[variant="danger"] {
-  background: #9B1B20;
-  color: #FFF5F4;
-  border: 1px solid #9B1B20;
-}
-QPushButton[variant="flat"] {
-  background: transparent;
-  border: none;
-  color: #6E5B49;
-}
-
-/* Tabs */
-QTabWidget::pane {
-  border: 1px solid #D8CEBE;
-  border-radius: 10px;
-  background: #FFFCF4;
-}
-QTabBar::tab {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  border-bottom: none;
-  padding: 6px 14px;
-  margin-right: 6px;
-  border-top-left-radius: 10px;
-  border-top-right-radius: 10px;
-  color: #6E5B49;
-}
-QTabBar::tab:selected {
-  background: #FBF7EE;
-  color: #1C1713;
-  border-bottom: 2px solid #B58A2A;    /* subtle gilded underline */
-}
-
-/* Lists / Tables */
-QListWidget, QTreeView, QTableView {
-  background: #FFFCF4;
-  border: 1px solid #D8CEBE;
-  border-radius: 10px;
-}
-QListView::item { padding: 7px 9px; }
-QListView::item:selected { background: #F0E6D7; color: #1C1713; border-radius: 6px; }
-
-/* Splitter */
-QSplitter::handle { background: #E8E0CF; width: 8px; }
-QSplitter::handle:hover { background: #E2D8C4; }
-
-/* Scrollbars */
-QScrollBar:vertical, QScrollBar:horizontal { background: transparent; margin: 0; }
-QScrollBar::handle { background: #D1C7B6; border-radius: 6px; min-height: 24px; }
-QScrollBar::handle:hover { background: #C5B9A6; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
-
-/* Status Bar & Tooltips */
-QStatusBar { background: #FFFCF4; border-top: 1px solid #D8CEBE; }
-QToolTip {
-  background: #FFF9ED; color: #1C1713;
-  border: 1px solid #D8CEBE; padding: 6px 8px; border-radius: 8px;
-}
-
-/* Placeholders (QLineEdit supports this; QTextEdit placeholder styling varies by Qt) */
-QLineEdit::placeholder { color: #9B8A78; }
-"""
-
-class ImportSignals(QObject):
-    done = Signal(int)         # imported rows
-    error = Signal(str)        # error text
-
-
-class ImportWorker(QRunnable):
-    def __init__(self, path: str, *, scrape: bool, default_image: str | None):
-        super().__init__()
-        self.path = path
-        self.scrape = scrape
-        self.default_image = default_image
-        self.signals = ImportSignals()
-
-    @Slot()
-    def run(self):
-        try:
-            count = tc_import_file(self.path, scrape=self.scrape, default_image=self.default_image)
-            self.signals.done.emit(count)
-        except Exception as e:
-            self.signals.error.emit(str(e)) 
-
-
-
+from townecodex.db import init_db, engine
+from townecodex.ui.styles import APP_TITLE, build_stylesheet
+from townecodex.ui.backend import Backend, QueryParams
+from townecodex.ui.workers import ImportWorker, QueryWorker
 
 def _noop(*_a, **_kw):
-    # Visual confirmation without wiring backends
     QMessageBox.information(None, "Stub", "This action is not wired yet.")
-
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -217,33 +27,29 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_TITLE)
         self.resize(1200, 800)
 
+        self.backend = Backend()
+        self.pool = QThreadPool.globalInstance()
+
         self._build_menubar()
         self._build_toolbar()
         self._build_central()
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Ready")
 
-        self.pool = QThreadPool.globalInstance()
-
-        base_dir = os.path.dirname(__file__)                 
-        icon_path = os.path.join(base_dir, "..", "..", "assets", "logo.png")
-        icon_path = os.path.abspath(icon_path)
+        base_dir = os.path.dirname(__file__)
+        icon_path = os.path.abspath(os.path.join(base_dir, "..", "..", "assets", "logo.png"))
         self.setWindowIcon(QIcon(icon_path))
-
 
     # ---------- Menus ----------
     def _build_menubar(self):
         mb = self.menuBar()
 
         m_file = mb.addMenu("&File")
-        act_new = QAction("New Inventory…", self, triggered=_noop)
-        act_import = QAction("Import…", self, shortcut=QKeySequence("Ctrl+I"), triggered=self._prompt_import)
-        act_export = QAction("Export…", self, shortcut=QKeySequence("Ctrl+E"), triggered=_noop)
-        act_quit = QAction("Quit", self, shortcut=QKeySequence("Ctrl+Q"), triggered=self.close)
-        for a in (act_new, act_import, act_export):
-            m_file.addAction(a)
+        m_file.addAction(QAction("New Inventory…", self, triggered=_noop))
+        m_file.addAction(QAction("Import…", self, shortcut=QKeySequence("Ctrl+I"), triggered=self._prompt_import))
+        m_file.addAction(QAction("Export…", self, shortcut=QKeySequence("Ctrl+E"), triggered=_noop))
         m_file.addSeparator()
-        m_file.addAction(act_quit)
+        m_file.addAction(QAction("Quit", self, shortcut=QKeySequence("Ctrl+Q"), triggered=self.close))
 
         m_edit = mb.addMenu("&Edit")
         m_edit.addAction(QAction("Update Price…", self, triggered=_noop))
@@ -262,170 +68,150 @@ class MainWindow(QMainWindow):
 
     # ---------- Toolbar ----------
     def _build_toolbar(self):
-        tb = QToolBar("Main")
-        tb.setMovable(False)
+        tb = QToolBar("Main"); tb.setMovable(False)
         self.addToolBar(Qt.TopToolBarArea, tb)
-
-        btn_refresh = QAction("Refresh", self, triggered=self._refresh)
-        btn_search = QAction("Search", self, triggered=_noop)
-        btn_generate = QAction("Run Generator", self, triggered=_noop)
-        btn_show = QAction("Show", self, triggered=_noop)
-        btn_export = QAction("Export", self, triggered=_noop)
-
-        for a in (btn_refresh, btn_search, btn_generate, btn_show, btn_export):
+        for a in (
+            QAction("Refresh", self, triggered=self._refresh),
+            QAction("Search", self, triggered=_noop),
+            QAction("Run Generator", self, triggered=_noop),
+            QAction("Show", self, triggered=_noop),
+            QAction("Export", self, triggered=_noop),
+        ):
             tb.addAction(a)
 
-    # ---------- Central Layout ----------
+    # ---------- Central ----------
     def _build_central(self):
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(8)
-        splitter.setOpaqueResize(True)
+        splitter = QSplitter(Qt.Horizontal); splitter.setChildrenCollapsible(False); splitter.setHandleWidth(8); splitter.setOpaqueResize(True)
 
-        # LEFT: Sidebar — Mode tabs + Filters + List
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(10, 8, 8, 8)
-        left_layout.setSpacing(10)
+        # LEFT
+        left = QWidget(); left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 8, 8, 8); left_layout.setSpacing(10)
 
-        # Mode strip (Query / Generator / Import)
-        mode_box = QGroupBox("Mode")
-        grid = QGridLayout(mode_box)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Query", "Generator", "Import"])
+        mode_box = QGroupBox("Mode"); grid = QGridLayout(mode_box)
+        self.mode_combo = QComboBox(); self.mode_combo.addItems(["Query", "Generator", "Import"])
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        grid.addWidget(QLabel("Mode:"), 0, 0)
-        grid.addWidget(self.mode_combo, 0, 1)
+        grid.addWidget(QLabel("Mode:"), 0, 0); grid.addWidget(self.mode_combo, 0, 1)
         left_layout.addWidget(mode_box)
 
-        # --- Import (shown in Import mode) ---
-        self.import_box = QGroupBox("Import")
-        ig = QGridLayout(self.import_box)
+        self.list_view = QListView()
+        self.list_model = QStandardItemModel(self.list_view)
+        self.list_view.setModel(self.list_model)
 
+        # Import panel
+        self.import_box = QGroupBox("Import"); ig = QGridLayout(self.import_box)
         self.txt_import_path = QLineEdit(placeholderText="Select CSV/XLSX file…")
-        btn_browse = QPushButton("Browse…")
-        btn_browse.clicked.connect(self._browse_import)
-
+        btn_browse = QPushButton("Browse…"); btn_browse.clicked.connect(self._browse_import)
         self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
-        self.chk_scrape = QComboBox()
-        self.chk_scrape.addItems(["Don't scrape Reddit", "Scrape Reddit"])
-        # 0 -> False, 1 -> True
-
-        btn_run_import = QPushButton("Run Import")
-        btn_run_import.setProperty("variant", "primary")
-        btn_run_import.clicked.connect(self._run_import)
-
-        row = 0
-        ig.addWidget(QLabel("File"), row, 0); ig.addWidget(self.txt_import_path, row, 1); ig.addWidget(btn_browse, row, 2); row += 1
-        ig.addWidget(QLabel("Default image"), row, 0); ig.addWidget(self.txt_default_img, row, 1, 1, 2); row += 1
-        ig.addWidget(QLabel("Scraping"), row, 0); ig.addWidget(self.chk_scrape, row, 1, 1, 2); row += 1
-        ig.addWidget(btn_run_import, row, 0, 1, 3)
-
+        self.chk_scrape = QComboBox(); self.chk_scrape.addItems(["Don't scrape Reddit", "Scrape Reddit"])
+        btn_run_import = QPushButton("Run Import"); btn_run_import.setProperty("variant", "primary"); btn_run_import.clicked.connect(self._run_import)
+        r = 0
+        ig.addWidget(QLabel("File"), r, 0); ig.addWidget(self.txt_import_path, r, 1); ig.addWidget(btn_browse, r, 2); r += 1
+        ig.addWidget(QLabel("Default image"), r, 0); ig.addWidget(self.txt_default_img, r, 1, 1, 2); r += 1
+        ig.addWidget(QLabel("Scraping"), r, 0); ig.addWidget(self.chk_scrape, r, 1, 1, 2); r += 1
+        ig.addWidget(btn_run_import, r, 0, 1, 3)
         left_layout.addWidget(self.import_box)
 
-        # Filters (shown in Query mode)
-        self.filter_box = QGroupBox("Filters")
-        f = QGridLayout(self.filter_box)
+        # Filters
+        self.filter_box = QGroupBox("Filters"); f = QGridLayout(self.filter_box)
         self.txt_name = QLineEdit(placeholderText="name contains…")
         self.cmb_type = QComboBox(); self.cmb_type.addItems(["Any", "Wondrous Item", "Armor", "Weapon", "Potion"])
         self.cmb_rarity = QComboBox(); self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"])
         self.cmb_attune = QComboBox(); self.cmb_attune.addItems(["Any", "Requires Attunement", "No Attunement"])
-
         f.addWidget(QLabel("Name"), 0, 0); f.addWidget(self.txt_name, 0, 1)
         f.addWidget(QLabel("Type"), 1, 0); f.addWidget(self.cmb_type, 1, 1)
         f.addWidget(QLabel("Rarity"), 2, 0); f.addWidget(self.cmb_rarity, 2, 1)
         f.addWidget(QLabel("Attunement"), 3, 0); f.addWidget(self.cmb_attune, 3, 1)
-
         btn_row = QHBoxLayout()
-        btn_apply = QPushButton("Apply"); btn_apply.clicked.connect(self._refresh)
-        btn_clear = QPushButton("Clear"); btn_clear.clicked.connect(self._clear_filters)
+        btn_apply = QPushButton("Apply"); btn_apply.setProperty("variant", "primary"); btn_apply.clicked.connect(self._refresh)
+        btn_clear = QPushButton("Clear"); btn_clear.setProperty("variant", "flat"); btn_clear.clicked.connect(self._clear_filters)
         btn_row.addWidget(btn_apply); btn_row.addWidget(btn_clear); btn_row.addStretch(1)
         f.addLayout(btn_row, 4, 0, 1, 2)
-
         left_layout.addWidget(self.filter_box)
 
-        # Result list
-        result_box = QGroupBox("Results")
-        lb = QVBoxLayout(result_box)
-        self.list_view = QListView()
-        self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        lb.addWidget(self.list_view)
-        left_layout.addWidget(result_box, 1)
+        # Results list
+        result_box = QGroupBox("Results"); lb = QVBoxLayout(result_box)
+        self.list_view = QListView(); self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.list_model = QStringListModel(); self.list_view.setModel(self.list_model)
+        lb.addWidget(self.list_view); left_layout.addWidget(result_box, 1)
 
-        # RIGHT: Detail / Preview / Log tabs
-        right = QWidget()
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(8, 8, 10, 8)
-        right_layout.setSpacing(10)
-
+        # RIGHT
+        right = QWidget(); right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 10, 8); right_layout.setSpacing(10)
         tabs = QTabWidget()
-        # Detail tab
-        detail = QWidget()
-        dl = QGridLayout(detail)
-        dl.addWidget(QLabel("Title"), 0, 0)
-        self.txt_title = QLineEdit(); dl.addWidget(self.txt_title, 0, 1)
-        dl.addWidget(QLabel("Type"), 1, 0)
-        self.txt_type = QLineEdit(); dl.addWidget(self.txt_type, 1, 1)
-        dl.addWidget(QLabel("Rarity"), 2, 0)
-        self.txt_rarity = QLineEdit(); dl.addWidget(self.txt_rarity, 2, 1)
-        dl.addWidget(QLabel("Attunement"), 3, 0)
-        self.txt_attune = QLineEdit(); dl.addWidget(self.txt_attune, 3, 1)
-        dl.addWidget(QLabel("Value"), 4, 0)
-        self.txt_value = QLineEdit(); dl.addWidget(self.txt_value, 4, 1)
-        dl.addWidget(QLabel("Image URL"), 5, 0)
-        self.txt_image = QLineEdit(); dl.addWidget(self.txt_image, 5, 1)
+        detail = QWidget(); dl = QGridLayout(detail)
+        dl.addWidget(QLabel("Title"), 0, 0); self.txt_title = QLineEdit(); dl.addWidget(self.txt_title, 0, 1)
+        dl.addWidget(QLabel("Type"), 1, 0); self.txt_type = QLineEdit(); dl.addWidget(self.txt_type, 1, 1)
+        dl.addWidget(QLabel("Rarity"), 2, 0); self.txt_rarity = QLineEdit(); dl.addWidget(self.txt_rarity, 2, 1)
+        dl.addWidget(QLabel("Attunement"), 3, 0); self.txt_attune = QLineEdit(); dl.addWidget(self.txt_attune, 3, 1)
+        dl.addWidget(QLabel("Value"), 4, 0); self.txt_value = QLineEdit(); dl.addWidget(self.txt_value, 4, 1)
+        dl.addWidget(QLabel("Image URL"), 5, 0); self.txt_image = QLineEdit(); dl.addWidget(self.txt_image, 5, 1)
         dl.addWidget(QLabel("Description (markdown)"), 6, 0, 1, 2)
-        self.txt_desc = QTextEdit(); self.txt_desc.setPlaceholderText("Item description…")
-        dl.addWidget(self.txt_desc, 7, 0, 1, 2)
+        self.txt_desc = QTextEdit(); self.txt_desc.setPlaceholderText("Item description…"); dl.addWidget(self.txt_desc, 7, 0, 1, 2)
         tabs.addTab(detail, "Details")
 
-        # Preview tab (HTML render target later)
-        self.preview = QTextEdit()
-        self.preview.setReadOnly(True)
-        self.preview.setPlaceholderText("Preview output (HTML/text) will appear here.")
+        self.preview = QTextEdit(); self.preview.setReadOnly(True); self.preview.setPlaceholderText("Preview output (HTML/text) will appear here.")
         tabs.addTab(self.preview, "Preview")
 
-        # Log tab
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
-        tabs.addTab(self.log, "Log")
-
+        self.log = QTextEdit(); self.log.setReadOnly(True); tabs.addTab(self.log, "Log")
         right_layout.addWidget(tabs)
 
-        splitter.addWidget(left)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 2)
+        splitter.addWidget(left); splitter.addWidget(right)
+        splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
 
-        container = QWidget()
-        lay = QVBoxLayout(container)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(splitter)
+        container = QWidget(); lay = QVBoxLayout(container); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(splitter)
         self.setCentralWidget(container)
-        self._on_mode_changed(self.mode_combo.currentIndex())
 
-    # ---------- actions (stubs) ----------
+        self._on_mode_changed(self.mode_combo.currentIndex())
+        # self._refresh()
+
+
+    # ---------- actions ----------
     def _refresh(self):
-        self.statusBar().showMessage("Refreshed (stub).", 1500)
-        self._append_log("Refresh pressed.")
+        # gather filters only when in Query mode
+        if self.mode_combo.currentText() != "Query":
+            self.statusBar().showMessage("Not in Query mode.", 1500)
+            return
+        name = self.txt_name.text()
+        type_ = self.cmb_type.currentText()
+        rarity = self.cmb_rarity.currentText()
+        attune_txt = self.cmb_attune.currentText()
+        attune_required = None
+        if attune_txt == "Requires Attunement":
+            attune_required = True
+        elif attune_txt == "No Attunement":
+            attune_required = False
+
+        items = self.backend.list_items(
+            name_contains=name,
+            type_equals=type_,
+            rarities=[rarity] if rarity and rarity != "Any" else None,
+            attunement_required=attune_required,
+        )
+
+        # populate list
+        self.list_model.removeRows(0, self.list_model.rowCount())
+        if not isinstance(self.list_model, QStandardItemModel):
+          self.list_model = QStandardItemModel(self.list_view)
+          self.list_view.setModel(self.list_model)
+        for it in items:
+            row = QStandardItem(it.name)
+            row.setEditable(False)
+            row.setData(it.id, Qt.UserRole)  # stash 
+            
+            self.list_model.appendRow(row)
+
+        self.statusBar().showMessage(f"{len(items)} result(s).", 2000)
 
     def _clear_filters(self):
-        self.txt_name.clear()
-        self.cmb_type.setCurrentIndex(0)
-        self.cmb_rarity.setCurrentIndex(0)
-        self.cmb_attune.setCurrentIndex(0)
+        self.txt_name.clear(); self.cmb_type.setCurrentIndex(0); self.cmb_rarity.setCurrentIndex(0); self.cmb_attune.setCurrentIndex(0)
         self.statusBar().showMessage("Filters cleared.", 1500)
 
-    def _on_mode_changed(self, idx: int):
-      mode = self.mode_combo.currentText()
-      self.filter_box.setVisible(mode == "Query")
-      self.import_box.setVisible(mode == "Import")
-      self.statusBar().showMessage(f"Mode: {mode}", 1500)
+    def _on_mode_changed(self, _idx: int):
+        mode = self.mode_combo.currentText()
+        self.filter_box.setVisible(mode == "Query"); self.import_box.setVisible(mode == "Import")
+        self.statusBar().showMessage(f"Mode: {mode}", 1500)
 
     def _browse_import(self):
-      path, _ = QFileDialog.getOpenFileName(self, "Select file to import", "", "Data Files (*.csv *.xlsx)")
-      if path:
-          self.txt_import_path.setText(path)
+        path, _ = QFileDialog.getOpenFileName(self, "Select file to import", "", "Data Files (*.csv *.xlsx)")
+        if path: self.txt_import_path.setText(path)
 
     def _toggle_import_ui(self, enabled: bool):
         for w in (self.txt_import_path, self.txt_default_img, self.chk_scrape):
@@ -434,16 +220,13 @@ class MainWindow(QMainWindow):
     def _run_import(self):
         path = self.txt_import_path.text().strip()
         if not path:
-            QMessageBox.warning(self, "Import", "Choose a CSV/XLSX file.")
-            return
+            QMessageBox.warning(self, "Import", "Choose a CSV/XLSX file."); return
         default_img = self.txt_default_img.text().strip() or None
         scrape = self.chk_scrape.currentIndex() == 1
-
         self._append_log(f"Import starting: {path} (scrape={scrape}, default_image={'yes' if default_img else 'no'})")
-        self.statusBar().showMessage("Import running…")
-        self._toggle_import_ui(False)
+        self.statusBar().showMessage("Import running…"); self._toggle_import_ui(False)
 
-        worker = ImportWorker(path, scrape=scrape, default_image=default_img)
+        worker = ImportWorker(self.backend, path, scrape=scrape, default_image=default_img)
         worker.signals.done.connect(self._on_import_done)
         worker.signals.error.connect(self._on_import_error)
         self.pool.start(worker)
@@ -452,7 +235,7 @@ class MainWindow(QMainWindow):
         self._append_log(f"Import complete. Upserted {count} entries.")
         self.statusBar().showMessage(f"Import complete ({count}).", 3000)
         self._toggle_import_ui(True)
-        # optional: self._refresh()
+        self._refresh()
 
     def _on_import_error(self, msg: str):
         self._append_log(f"ERROR: {msg}")
@@ -460,23 +243,86 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Import failed.", 3000)
         self._toggle_import_ui(True)
 
-
     def _prompt_import(self):
-      self.mode_combo.setCurrentText("Import")
-      self._browse_import()
+        self.mode_combo.setCurrentText("Import"); self._browse_import()
+
+    def _gather_query_filters(self):
+        name_contains = self.txt_name.text().strip() or None
+        type_equals = self.cmb_type.currentText()
+        rar = self.cmb_rarity.currentText()
+        rarities = None if rar == "Any" else [rar]
+        att_txt = self.cmb_attune.currentText()
+        if att_txt == "Any":
+            att = None
+        elif att_txt == "Requires Attunement":
+            att = True
+        else:
+            att = False
+        return dict(
+            name_contains=name_contains,
+            type_equals=type_equals,
+            rarities=rarities,
+            attunement_required=att,
+        )
+
+    def _on_row_changed(self, current, _previous):
+        if not current or not current.isValid():
+            return
+        idx = current
+        entry_id = idx.data(Qt.UserRole)
+        if entry_id is None:
+            return
+        data = self.backend.get_item(int(entry_id))
+        if not data:
+            return
+        # fill the right-hand fields
+        self.txt_title.setText(data["name"])
+        self.txt_type.setText(data["type"])
+        self.txt_rarity.setText(data["rarity"])
+        attune = "Requires Attunement" if data["attunement_required"] else "None"
+        if data["attunement_criteria"]:
+            attune += f" ({data['attunement_criteria']})"
+        self.txt_attune.setText(attune)
+        self.txt_value.setText("" if data["value"] == "" else str(data["value"]))
+        self.txt_image.setText(data["image_url"])
+        self.txt_desc.setPlainText(data["description"])
+
+    def _on_query_done(self, items):
+        # items is list[ListItem]
+        if not isinstance(self.list_model, QStandardItemModel):
+          self.list_model = QStandardItemModel(self.list_view)
+          self.list_view.setModel(self.list_model)
+
+        if isinstance(self.list_model, QStandardItemModel):
+            self.list_model.clear()
+        for itm in items:
+            sitem = QStandardItem(itm.name)
+            sitem.setEditable(False)
+            # stash the id for later detail loading
+            sitem.setData(itm.id, Qt.UserRole + 1)
+            if not isinstance(self.list_model, QStandardItemModel):
+                      self.list_model = QStandardItemModel(self.list_view)
+                      self.list_view.setModel(self.list_model)
+            self.list_model.appendRow(sitem)
+        self.statusBar().showMessage(f"Loaded {len(items)} items.", 2000)
+        self._append_log(f"Query: {len(items)} rows")
+
+    def _on_query_error(self, msg: str):
+        self._append_log(f"QUERY ERROR: {msg}")
+        QMessageBox.critical(self, "Query failed", msg)
+        self.statusBar().showMessage("Query failed.", 3000)
 
     def _append_log(self, msg: str):
         self.log.append(msg)
 
+
 def main() -> int:
     app = QApplication([])
-    app.setStyleSheet(STYLE)
 
-    init_db()                      # ensure tables exist in the target DB
-    print("DB URL:", engine.url)   # sanity: matches CLI?
+    app.setStyleSheet(build_stylesheet())          
 
-    w = MainWindow()
-    w.show()
+    init_db(); print("DB URL:", engine.url)
+    w = MainWindow(); w.show()
     return app.exec()
 
 if __name__ == "__main__":
