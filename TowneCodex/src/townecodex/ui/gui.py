@@ -1,8 +1,12 @@
-# src/townecodex/ui/shell.py
+# src/townecodex/ui/gui.py
 from __future__ import annotations
 
+# --- imports (top of file) ---
+import os
+from PySide6.QtGui import QIcon, QAction, QKeySequence
+
+
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
@@ -10,7 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QSizePolicy
 )
 
-APP_TITLE = "Towne Codex — UI Shell"
+APP_TITLE = "Towne Codex"
 
 STYLE = """
 /* ================= Towne Codex — Medieval Parchment Theme (Qt-safe) ================= */
@@ -188,6 +192,12 @@ class MainWindow(QMainWindow):
         self._build_central()
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Ready")
+        
+        base_dir = os.path.dirname(__file__)                 
+        icon_path = os.path.join(base_dir, "..", "..", "assets", "logo.png")
+        icon_path = os.path.abspath(icon_path)
+        self.setWindowIcon(QIcon(icon_path))
+
 
     # ---------- Menus ----------
     def _build_menubar(self):
@@ -261,7 +271,7 @@ class MainWindow(QMainWindow):
         f = QGridLayout(self.filter_box)
         self.txt_name = QLineEdit(placeholderText="name contains…")
         self.cmb_type = QComboBox(); self.cmb_type.addItems(["Any", "Wondrous Item", "Armor", "Weapon", "Potion"])
-        self.cmb_rarity = QComboBox(); self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary, Artifact"])
+        self.cmb_rarity = QComboBox(); self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"])
         self.cmb_attune = QComboBox(); self.cmb_attune.addItems(["Any", "Requires Attunement", "No Attunement"])
 
         f.addWidget(QLabel("Name"), 0, 0); f.addWidget(self.txt_name, 0, 1)
