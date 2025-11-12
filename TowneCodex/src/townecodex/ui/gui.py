@@ -1,10 +1,18 @@
 # src/townecodex/ui/gui.py
 from __future__ import annotations
 
+# threading
+from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool
+
+# domain
+from townecodex.importer import import_file as tc_import_file
+
+
 # --- imports (top of file) ---
 import os
 from PySide6.QtGui import QIcon, QAction, QKeySequence
 
+from townecodex.db import init_db, engine  # add this import
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -174,12 +182,34 @@ QToolTip {
 QLineEdit::placeholder { color: #9B8A78; }
 """
 
+class ImportSignals(QObject):
+    done = Signal(int)         # imported rows
+    error = Signal(str)        # error text
+
+
+class ImportWorker(QRunnable):
+    def __init__(self, path: str, *, scrape: bool, default_image: str | None):
+        super().__init__()
+        self.path = path
+        self.scrape = scrape
+        self.default_image = default_image
+        self.signals = ImportSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            count = tc_import_file(self.path, scrape=self.scrape, default_image=self.default_image)
+            self.signals.done.emit(count)
+        except Exception as e:
+            self.signals.error.emit(str(e)) 
+
 
 
 
 def _noop(*_a, **_kw):
     # Visual confirmation without wiring backends
     QMessageBox.information(None, "Stub", "This action is not wired yet.")
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -192,7 +222,9 @@ class MainWindow(QMainWindow):
         self._build_central()
         self.setStatusBar(QStatusBar())
         self.statusBar().showMessage("Ready")
-        
+
+        self.pool = QThreadPool.globalInstance()
+
         base_dir = os.path.dirname(__file__)                 
         icon_path = os.path.join(base_dir, "..", "..", "assets", "logo.png")
         icon_path = os.path.abspath(icon_path)
@@ -265,6 +297,31 @@ class MainWindow(QMainWindow):
         grid.addWidget(QLabel("Mode:"), 0, 0)
         grid.addWidget(self.mode_combo, 0, 1)
         left_layout.addWidget(mode_box)
+
+        # --- Import (shown in Import mode) ---
+        self.import_box = QGroupBox("Import")
+        ig = QGridLayout(self.import_box)
+
+        self.txt_import_path = QLineEdit(placeholderText="Select CSV/XLSX file…")
+        btn_browse = QPushButton("Browse…")
+        btn_browse.clicked.connect(self._browse_import)
+
+        self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
+        self.chk_scrape = QComboBox()
+        self.chk_scrape.addItems(["Don't scrape Reddit", "Scrape Reddit"])
+        # 0 -> False, 1 -> True
+
+        btn_run_import = QPushButton("Run Import")
+        btn_run_import.setProperty("variant", "primary")
+        btn_run_import.clicked.connect(self._run_import)
+
+        row = 0
+        ig.addWidget(QLabel("File"), row, 0); ig.addWidget(self.txt_import_path, row, 1); ig.addWidget(btn_browse, row, 2); row += 1
+        ig.addWidget(QLabel("Default image"), row, 0); ig.addWidget(self.txt_default_img, row, 1, 1, 2); row += 1
+        ig.addWidget(QLabel("Scraping"), row, 0); ig.addWidget(self.chk_scrape, row, 1, 1, 2); row += 1
+        ig.addWidget(btn_run_import, row, 0, 1, 3)
+
+        left_layout.addWidget(self.import_box)
 
         # Filters (shown in Query mode)
         self.filter_box = QGroupBox("Filters")
@@ -345,6 +402,7 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(splitter)
         self.setCentralWidget(container)
+        self._on_mode_changed(self.mode_combo.currentIndex())
 
     # ---------- actions (stubs) ----------
     def _refresh(self):
@@ -359,12 +417,53 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Filters cleared.", 1500)
 
     def _on_mode_changed(self, idx: int):
-        mode = self.mode_combo.currentText()
-        self.filter_box.setVisible(mode == "Query")
-        self.statusBar().showMessage(f"Mode: {mode}", 1500)
+      mode = self.mode_combo.currentText()
+      self.filter_box.setVisible(mode == "Query")
+      self.import_box.setVisible(mode == "Import")
+      self.statusBar().showMessage(f"Mode: {mode}", 1500)
+
+    def _browse_import(self):
+      path, _ = QFileDialog.getOpenFileName(self, "Select file to import", "", "Data Files (*.csv *.xlsx)")
+      if path:
+          self.txt_import_path.setText(path)
+
+    def _toggle_import_ui(self, enabled: bool):
+        for w in (self.txt_import_path, self.txt_default_img, self.chk_scrape):
+            w.setEnabled(enabled)
+
+    def _run_import(self):
+        path = self.txt_import_path.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Import", "Choose a CSV/XLSX file.")
+            return
+        default_img = self.txt_default_img.text().strip() or None
+        scrape = self.chk_scrape.currentIndex() == 1
+
+        self._append_log(f"Import starting: {path} (scrape={scrape}, default_image={'yes' if default_img else 'no'})")
+        self.statusBar().showMessage("Import running…")
+        self._toggle_import_ui(False)
+
+        worker = ImportWorker(path, scrape=scrape, default_image=default_img)
+        worker.signals.done.connect(self._on_import_done)
+        worker.signals.error.connect(self._on_import_error)
+        self.pool.start(worker)
+
+    def _on_import_done(self, count: int):
+        self._append_log(f"Import complete. Upserted {count} entries.")
+        self.statusBar().showMessage(f"Import complete ({count}).", 3000)
+        self._toggle_import_ui(True)
+        # optional: self._refresh()
+
+    def _on_import_error(self, msg: str):
+        self._append_log(f"ERROR: {msg}")
+        QMessageBox.critical(self, "Import failed", msg)
+        self.statusBar().showMessage("Import failed.", 3000)
+        self._toggle_import_ui(True)
+
 
     def _prompt_import(self):
-        QFileDialog.getOpenFileName(self, "Import (stub)", "", "CSV/XLSX (*.csv *.xlsx)")
+      self.mode_combo.setCurrentText("Import")
+      self._browse_import()
 
     def _append_log(self, msg: str):
         self.log.append(msg)
@@ -372,6 +471,10 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication([])
     app.setStyleSheet(STYLE)
+
+    init_db()                      # ensure tables exist in the target DB
+    print("DB URL:", engine.url)   # sanity: matches CLI?
+
     w = MainWindow()
     w.show()
     return app.exec()
