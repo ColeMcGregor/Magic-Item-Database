@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import requests
-import html
-import re
 import markdown
+import re, html as _html
 
 
 """
@@ -25,18 +24,18 @@ class RedditScraper:
         if images:
             src = images[0].get("source", {}).get("url")
             if src:
-                return html.unescape(src)
+                return _html.unescape(src)
 
         direct = post_data.get("url_overridden_by_dest")
         if direct and direct.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
-            return html.unescape(direct)
+            return _html.unescape(direct)
 
         if post_data.get("is_gallery") and "media_metadata" in post_data:
             for meta in (post_data["media_metadata"] or {}).values():
                 if (meta.get("e") == "Image") or (meta.get("m", "").startswith("image/")):
                     u = (meta.get("s") or {}).get("u")
                     if u:
-                        return html.unescape(u)
+                        return _html.unescape(u)
 
         return None
 
@@ -51,7 +50,7 @@ class RedditScraper:
         if not text:
             return text
 
-        marker = text.find("&#x200B;")
+        marker = text.find("&amp;#x200B;")
         if marker != -1:
             cut = text.find("**", marker)
             if cut != -1:
@@ -61,10 +60,55 @@ class RedditScraper:
         return text.strip()
 
     @staticmethod
+    def polish_description(text: str) -> str:
+        if not text:
+            return text
+
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if lines and lines[0].startswith("**") and lines[0].endswith("**"):
+            lines = lines[1:]  # remove title line
+        if lines and lines[0].startswith("*") and lines[0].endswith("*"):
+            lines = lines[1:]  # remove rarity/attunement line
+        # Rejoin text for further processing
+        text = "\n".join(lines)
+
+        # Now run your original clipping logic
+        marker = text.find("&#x200B;")
+        if marker != -1:
+            cut = text.find("**", marker)
+            if cut != -1:
+                text = text[:cut]
+
+        return text.strip()
+
+    @staticmethod
     def clean_title(title: str) -> str:
-        # remove braces from title
-        title = title.replace("{The Griffon's Saddlebag}", "")
-        return title.strip()
+   
+        if not title:
+            return ""
+        t = _html.unescape(title)
+        
+        # Remove leading [Flair] blocks (can be multiple)
+        t = re.sub(r'^(?:\s*\[[^\]]+\]\s*)+', '', t)
+
+        # Remove any {...} tags anywhere
+        t = re.sub(r'\{[^}]*\}', '', t)
+
+        # Remove common prefixes
+        for pat in (
+            r"(?i)^the griffon'?s saddlebag\s*[:\-]\s*",
+            r"(?i)^tgs\s*[:\-]\s*",
+            r"(?i)^homebrew\s*[:\-]\s*",
+        ):
+            t = re.sub(pat, '', t)
+
+        # If separators present, keep left-most (usually the item name)
+        t = re.split(r'\s[\-–—|]\s', t)[0]
+
+        # Normalize whitespace and strip quotes/punctuation edges
+        t = re.sub(r'\s+', ' ', t).strip().strip('"\'')
+
+        return t
 
     # --- main fetch -------------------------------------------------
 
@@ -188,6 +232,7 @@ class RedditScraper:
                     if len(lines) >= 2:
                         italic_line = lines[1].strip("*_")
                         rarity, attunement = parse_rarity_attunement(italic_line)
+                    description = cls.polish_description(description)
                 break
 
         # --- normalized outputs ------------------------------------------
