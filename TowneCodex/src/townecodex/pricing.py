@@ -4,12 +4,16 @@ from typing import Optional
 
 # Normalized rarity labels
 _RARITY_KEY = {
+    "1 Common": "Common",
+    "2 Uncommon": "Uncommon",
+    "3 Rare": "Rare",
+    "4 Very Rare": "Very Rare",
+    "5 Legendary": "Legendary",
+    "6 Artifact": "Artifact",
     "common": "Common",
     "uncommon": "Uncommon",
     "rare": "Rare",
     "very rare": "Very Rare",
-    "very-rare": "Very Rare",
-    "very_rare": "Very Rare",
     "legendary": "Legendary",
     "artifact": "Artifact",
 }
@@ -17,8 +21,7 @@ _RARITY_KEY = {
 def _normalize_rarity(rarity: str | None) -> Optional[str]:
     if not rarity:
         return None
-    key = " ".join(rarity.split()).lower()
-    return _RARITY_KEY.get(key)
+    return _RARITY_KEY.get(rarity)
 
 def _is_consumable(type_text: str | None) -> bool:
     """
@@ -45,28 +48,28 @@ _PRICE_TABLE: dict[tuple[str, str, Optional[bool]], int] = {
 
     # Uncommon
     ("Uncommon", "consumable", None): 250,
-    ("Uncommon", "other", True): 1_000,
+    ("Uncommon", "other", True): 1000,
     ("Uncommon", "other", False): 500,
 
     # Rare
-    ("Rare", "consumable", None): 1_000,
-    ("Rare", "other", True): 4_000,
-    ("Rare", "other", False): 2_000,
+    ("Rare", "consumable", None): 1000,
+    ("Rare", "other", True): 4000,
+    ("Rare", "other", False): 2000,
 
     # Very Rare
-    ("Very Rare", "consumable", None): 3_000,
-    ("Very Rare", "other", True): 15_000,
-    ("Very Rare", "other", False): 10_000,
+    ("Very Rare", "consumable", None): 3000,
+    ("Very Rare", "other", True): 15000,
+    ("Very Rare", "other", False): 10000,
 
     # Legendary
-    ("Legendary", "consumable", None): 5_000,
-    ("Legendary", "other", True): 50_000,
-    ("Legendary", "other", False): 30_000,
+    ("Legendary", "consumable", None): 5000,
+    ("Legendary", "other", True): 50000,
+    ("Legendary", "other", False): 30000,
 
     # Artifact
-    ("Artifact", "consumable", None): 20_000,
-    ("Artifact", "other", True): 200_000,
-    ("Artifact", "other", False): 100_000,
+    ("Artifact", "consumable", None): 20000,
+    ("Artifact", "other", True): 200000,
+    ("Artifact", "other", False): 100000,
 }
 
 
@@ -79,16 +82,21 @@ def compute_price(
     """
     Return the chart price for a given entry, or None if we can't map it.
     """
-    r = _normalize_rarity(rarity)
-    if not r:
-        return None
+    print(f"compute_price: rarity={rarity}, type_text={type_text}, attunement_required={attunement_required}")
 
     category = "consumable" if _is_consumable(type_text) else "other"
+    print(f"category: {category}")
+    r = _normalize_rarity(rarity)
+    if not r:
+        print(f"no rarity: {r}")
+        return None
 
     # For consumables, attunement doesn't matter
     if category == "consumable":
+        print(f"consumable: {_PRICE_TABLE.get((r, category, None))}")
         return _PRICE_TABLE.get((r, category, None))
 
     # For non-consumables, attunement matters. Treat None as False.
     att = bool(attunement_required)
+    print(f"non-consumable: {_PRICE_TABLE.get((r, category, att))}")
     return _PRICE_TABLE.get((r, category, att))

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Iterable, Dict, Any, Tuple, List
 from contextlib import contextmanager
 
-from sqlalchemy import select, update, func, delete
+from sqlalchemy import Null, select, update, func, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -393,10 +393,6 @@ class EntryRepository:
         # -- iterators for bulk operations ----------------------------------------
 
     def iter_missing_price(self, session):
-        """
-        Yield entries whose price is missing (value is NULL/None).
-        Intended for bulk auto-pricing passes.
-        """
         return (
             session.query(Entry)
             .filter(Entry.value.is_(None))

@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
 )
 
 from townecodex.renderers.html import HTMLCardRenderer
-from townecodex.dto import to_card_dto, CardDTO
+from townecodex.dto import CardDTO
 from townecodex.db import init_db, engine
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend, QueryParams
-from townecodex.ui.workers import ImportWorker, QueryWorker
+from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
 
 
 ABOUT_TEXT = f"""
@@ -82,9 +82,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.TopToolBarArea, tb)
         for a in (
             QAction("Refresh", self, triggered=self._refresh),
-            QAction("Search", self, triggered=_noop),
             QAction("Run Generator", self, triggered=_noop),
-            QAction("Show", self, triggered=_noop),
             QAction("Export", self, triggered=_noop),
         ):
             tb.addAction(a)
@@ -112,13 +110,33 @@ class MainWindow(QMainWindow):
         btn_browse = QPushButton("Browse…"); btn_browse.clicked.connect(self._browse_import)
         self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
         self.chk_scrape = QComboBox(); self.chk_scrape.addItems(["Don't scrape Reddit", "Scrape Reddit"])
-        btn_run_import = QPushButton("Run Import"); btn_run_import.setProperty("variant", "primary"); btn_run_import.clicked.connect(self._run_import)
+        btn_run_import = QPushButton("Run Import")
+        btn_run_import.setProperty("variant", "primary")
+        btn_run_import.clicked.connect(self._run_import)
+
+        # new: tools for bulk operations
+        btn_auto_price = QPushButton("Set All Missing Prices")
+        btn_auto_price.setProperty("variant", "primary")
+        btn_auto_price.clicked.connect(self._run_auto_price)
+
+        btn_scrape_existing = QPushButton("Scrape Existing Entries")
+        btn_scrape_existing.setProperty("variant", "primary")
+        btn_scrape_existing.clicked.connect(self._run_scrape_existing)
+
         r = 0
         ig.addWidget(QLabel("File"), r, 0); ig.addWidget(self.txt_import_path, r, 1); ig.addWidget(btn_browse, r, 2); r += 1
         ig.addWidget(QLabel("Default image"), r, 0); ig.addWidget(self.txt_default_img, r, 1, 1, 2); r += 1
         ig.addWidget(QLabel("Scraping"), r, 0); ig.addWidget(self.chk_scrape, r, 1, 1, 2); r += 1
-        ig.addWidget(btn_run_import, r, 0, 1, 3)
+        ig.addWidget(btn_run_import, r, 0, 1, 3); r += 1
+
+        tools_row = QHBoxLayout()
+        tools_row.addWidget(btn_auto_price)
+        tools_row.addWidget(btn_scrape_existing)
+        tools_row.addStretch(1)
+        ig.addLayout(tools_row, r, 0, 1, 3)
+
         left_layout.addWidget(self.import_box)
+
 
         # Filters
         self.filter_box = QGroupBox("Filters"); f = QGridLayout(self.filter_box)
@@ -202,9 +220,6 @@ class MainWindow(QMainWindow):
     # ---------- actions ----------
     def _refresh(self):
         # gather filters only when in Query mode
-        if self.mode_combo.currentText() != "Query":
-            self.statusBar().showMessage("Not in Query mode.", 1500)
-            return
         name = self.txt_name.text()
         type_ = self.cmb_type.currentText()
         rarity = self.cmb_rarity.currentText()
@@ -244,6 +259,52 @@ class MainWindow(QMainWindow):
         mode = self.mode_combo.currentText()
         self.filter_box.setVisible(mode == "Query"); self.import_box.setVisible(mode == "Import")
         self.statusBar().showMessage(f"Mode: {mode}", 1500)
+
+    def _run_auto_price(self) -> None:
+        """
+        Start background worker to fill missing prices from the chart.
+        """
+        self._append_log("Auto-price: starting bulk update of missing values…")
+        self.statusBar().showMessage("Auto-pricing missing values…", 3000)
+
+        worker = AutoPriceWorker(self.backend)
+        worker.signals.done.connect(self._on_auto_price_done)
+        worker.signals.error.connect(self._on_auto_price_error)
+        self.pool.start(worker)
+
+    def _on_auto_price_done(self, count: int) -> None:
+        self._append_log(f"Auto-price: updated {count} entr{'y' if count == 1 else 'ies'}.")
+        self.statusBar().showMessage(f"Auto-price complete ({count} updated).", 3000)
+        self._refresh()
+
+    def _on_auto_price_error(self, msg: str) -> None:
+        self._append_log(f"AUTO-PRICE ERROR: {msg}")
+        QMessageBox.critical(self, "Auto-price failed", msg)
+        self.statusBar().showMessage("Auto-price failed.", 3000)
+
+    def _run_scrape_existing(self) -> None:
+        """
+        Start background worker to scrape Reddit for existing entries
+        that have links but missing description/image.
+        """
+        self._append_log("Scrape: starting pass over existing entries…")
+        self.statusBar().showMessage("Scraping existing entries…", 3000)
+
+        worker = ScrapeWorker(self.backend, throttle_seconds=1.0)
+        worker.signals.done.connect(self._on_scrape_done)
+        worker.signals.error.connect(self._on_scrape_error)
+        self.pool.start(worker)
+
+    def _on_scrape_done(self, count: int) -> None:
+        self._append_log(f"Scrape: updated {count} entr{'y' if count == 1 else 'ies'}.")
+        self.statusBar().showMessage(f"Scrape complete ({count} updated).", 3000)
+        self._refresh()
+
+    def _on_scrape_error(self, msg: str) -> None:
+        self._append_log(f"SCRAPE ERROR: {msg}")
+        QMessageBox.critical(self, "Scrape failed", msg)
+        self.statusBar().showMessage("Scrape failed.", 3000)
+
 
     def _browse_import(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select file to import", "", "Data Files (*.csv *.xlsx)")
@@ -307,21 +368,21 @@ class MainWindow(QMainWindow):
             return
 
         # Fill the fields
-        self.txt_title.setText(detail["name"])
-        self.txt_type.setText(detail["type"])
-        self.txt_rarity.setText(detail["rarity"])
+        self.txt_title.setText(detail.title)
+        self.txt_type.setText(detail.type)
+        self.txt_rarity.setText(detail.rarity)
 
         att = "Requires Attunement"
-        if detail["attunement_required"] and detail["attunement_criteria"]:
-            att += f" ({detail['attunement_criteria']})"
-        elif not detail["attunement_required"]:
+        if detail.attunement_required and detail.attunement_criteria:
+            att += f" ({detail.attunement_criteria})"
+        elif not detail.attunement_required:
             att = "None"
 
         self.txt_attune.setText(att)
 
-        self.txt_value.setText(str(detail["value"]) if detail["value"] != "" else "")
-        self.txt_image.setText(detail["image_url"])
-        self.txt_desc.setPlainText(detail["description"])
+        self.txt_value.setText(str(detail.value) if detail.value != "" else "")
+        self.txt_image.setText(detail.image_url)
+        self.txt_desc.setPlainText(detail.description)
 
     def _on_import_error(self, msg: str):
         self._append_log(f"ERROR: {msg}")
@@ -376,8 +437,8 @@ class MainWindow(QMainWindow):
     def _on_query_done(self, items):
         # items is list[ListItem]
         if not isinstance(self.list_model, QStandardItemModel):
-          self.list_model = QStandardItemModel(self.list_view)
-          self.list_view.setModel(self.list_model)
+            self.list_model = QStandardItemModel(self.list_view)
+            self.list_view.setModel(self.list_model)
 
         if isinstance(self.list_model, QStandardItemModel):
             self.list_model.clear()
@@ -387,8 +448,8 @@ class MainWindow(QMainWindow):
             # stash the id for later detail loading
             sitem.setData(itm.id, Qt.UserRole + 1)
             if not isinstance(self.list_model, QStandardItemModel):
-                      self.list_model = QStandardItemModel(self.list_view)
-                      self.list_view.setModel(self.list_model)
+                self.list_model = QStandardItemModel(self.list_view)
+                self.list_view.setModel(self.list_model)
             self.list_model.appendRow(sitem)
         self.statusBar().showMessage(f"Loaded {len(items)} items.", 2000)
         self._append_log(f"Query: {len(items)} rows")
@@ -442,19 +503,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Preview", f"Entry {entry_id} not found.")
             return None
 
-        # Map dict -> CardDTO
-        return CardDTO(
-            id=data["id"],
-            title=data["name"],
-            type=data["type"],
-            rarity=data["rarity"],
-            value=data["value"] or None,
-            value_updated=False,   # or data.get("value_updated", False) if you add it
-            attunement_required=data["attunement_required"],
-            attunement_criteria=data["attunement_criteria"] or None,
-            description=data["description"] or None,
-            image_url=data["image_url"] or None,
-        )
+        #  CardDTO
+        return data
 
     def _append_log(self, msg: str):
         self.log.append(msg)
