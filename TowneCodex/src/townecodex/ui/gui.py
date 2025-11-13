@@ -1,6 +1,7 @@
 # townecodex/ui/gui.py
 from __future__ import annotations
-import os
+import tempfile, webbrowser, os
+import html
 
 from PySide6.QtCore import Qt, QThreadPool, QStringListModel, QModelIndex
 from PySide6.QtGui import QIcon, QAction, QKeySequence
@@ -12,10 +13,19 @@ from PySide6.QtWidgets import (
     QMessageBox, QSizePolicy
 )
 
+from townecodex.renderers.html import HTMLCardRenderer
+from townecodex.dto import to_card_dto, CardDTO
 from townecodex.db import init_db, engine
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend, QueryParams
 from townecodex.ui.workers import ImportWorker, QueryWorker
+
+
+ABOUT_TEXT = f"""
+<p><strong>{APP_TITLE}</strong> v1.0.0</p>
+<p>A tool for managing your inventory of items for the game <a href="https://www.dndbeyond.com/sources/basic-rules">D&amp;D 5e</a>.</p>
+<p>© 2025 <a href="https://github.com/cole-mcgregor">Cole McGregor, for Liam Towne</a></p>
+"""
 
 def _noop(*_a, **_kw):
     QMessageBox.information(None, "Stub", "This action is not wired yet.")
@@ -64,7 +74,7 @@ class MainWindow(QMainWindow):
         m_tools.addAction(QAction("Manage Generators…", self, triggered=_noop))
 
         m_help = mb.addMenu("&Help")
-        m_help.addAction(QAction("About", self, triggered=lambda: QMessageBox.information(self, "About", APP_TITLE)))
+        m_help.addAction(QAction("About", self, triggered=lambda: QMessageBox.information(self, "About", ABOUT_TEXT)))
 
     # ---------- Toolbar ----------
     def _build_toolbar(self):
@@ -149,8 +159,29 @@ class MainWindow(QMainWindow):
         self.txt_desc = QTextEdit(); self.txt_desc.setPlaceholderText("Item description…"); dl.addWidget(self.txt_desc, 7, 0, 1, 2)
         tabs.addTab(detail, "Details")
 
-        self.preview = QTextEdit(); self.preview.setReadOnly(True); self.preview.setPlaceholderText("Preview output (HTML/text) will appear here.")
-        tabs.addTab(self.preview, "Preview")
+        preview_tab = QWidget()
+        pl = QVBoxLayout(preview_tab)
+        pl.setContentsMargins(4, 4, 4, 4)
+        pl.setSpacing(6)
+
+        toolbar = QHBoxLayout()
+        self.btn_preview_selected = QPushButton("Render from selected")
+        self.btn_preview_selected.setProperty("variant", "royal")
+        self.btn_open_browser = QPushButton("Open in browser…")
+        self.btn_open_browser.setProperty("variant", "primary")
+
+        toolbar.addWidget(self.btn_preview_selected)
+        toolbar.addWidget(self.btn_open_browser)
+        toolbar.addStretch(1)
+
+        self.preview = QTextEdit()
+        self.preview.setReadOnly(True)
+        self.preview.setPlaceholderText("Preview output (HTML) will appear here.")
+
+        pl.addLayout(toolbar)
+        pl.addWidget(self.preview)
+
+        tabs.addTab(preview_tab, "Preview")
 
         self.log = QTextEdit(); self.log.setReadOnly(True); tabs.addTab(self.log, "Log")
         right_layout.addWidget(tabs)
@@ -160,6 +191,9 @@ class MainWindow(QMainWindow):
 
         container = QWidget(); lay = QVBoxLayout(container); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(splitter)
         self.setCentralWidget(container)
+
+        self.btn_preview_selected.clicked.connect(self._preview_selected_card)
+        self.btn_open_browser.clicked.connect(self._open_selected_card)
 
         self._on_mode_changed(self.mode_combo.currentIndex())
         # self._refresh()
@@ -363,6 +397,64 @@ class MainWindow(QMainWindow):
         self._append_log(f"QUERY ERROR: {msg}")
         QMessageBox.critical(self, "Query failed", msg)
         self.statusBar().showMessage("Query failed.", 3000)
+
+    def _preview_selected_card(self):
+        dto = self._build_dto_for_selected()
+        if dto is None:
+            return
+        renderer = HTMLCardRenderer(enable_markdown=True)
+        html_snippet = renderer.render_card(dto)
+        self.preview.setHtml(html_snippet)
+
+
+    def _open_selected_card(self):
+        dto = self._build_dto_for_selected()
+        if dto is None:
+            return
+
+        renderer = HTMLCardRenderer(enable_markdown=True)
+        html_page = renderer.render_page([dto], page_title=dto.title or "Towne Codex — Item")
+
+        fd, path = tempfile.mkstemp(suffix=".html", prefix="townecodex_")
+        os.close(fd)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html_page)
+
+        webbrowser.open_new_tab(path)
+
+
+    def _selected_entry_id(self) -> int | None:
+        idx = self.list_view.currentIndex()
+        if not idx.isValid():
+            return None
+        entry_id = idx.data(Qt.UserRole)
+        return int(entry_id) if entry_id is not None else None
+
+
+    def _build_dto_for_selected(self) -> CardDTO | None:
+        entry_id = self._selected_entry_id()
+        if entry_id is None:
+            QMessageBox.information(self, "Preview", "Select an item in the Results list first.")
+            return None
+
+        data = self.backend.get_item(entry_id)
+        if not data:
+            QMessageBox.warning(self, "Preview", f"Entry {entry_id} not found.")
+            return None
+
+        # Map dict -> CardDTO
+        return CardDTO(
+            id=data["id"],
+            title=data["name"],
+            type=data["type"],
+            rarity=data["rarity"],
+            value=data["value"] or None,
+            value_updated=False,   # or data.get("value_updated", False) if you add it
+            attunement_required=data["attunement_required"],
+            attunement_criteria=data["attunement_criteria"] or None,
+            description=data["description"] or None,
+            image_url=data["image_url"] or None,
+        )
 
     def _append_log(self, msg: str):
         self.log.append(msg)
