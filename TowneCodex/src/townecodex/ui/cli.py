@@ -208,6 +208,15 @@ def cmd_create_generator(_args) -> int:
     print("TODO: 'create-generator' is not implemented yet. Add generator creation.", file=sys.stderr)
     return 2
 
+def cmd_auto_price(args) -> int:
+    repo = EntryRepository()
+    count = repo.fill_missing_prices_from_chart(commit=not args.dry_run)
+    if args.dry_run:
+        print(f"[DRY RUN] Would update {count} entr{'y' if count == 1 else 'ies'}.")
+    else:
+        print(f"Updated {count} entr{'y' if count == 1 else 'ies'} with chart prices.")
+    return 0
+
 
 # ------------------------------------------------------------------------------
 # argparse wiring
@@ -284,6 +293,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--sort", default="name",
                     help='Sort by "name", "-name", "rarity", "value", etc.')
     sp.set_defaults(func=cmd_search)
+
+    sp = sub.add_parser("auto-price", help="Fill missing prices from chart.")
+    sp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compute how many would be updated, but do not commit.",
+    )
+    sp.set_defaults(func=cmd_auto_price)
 
     # stubs
     sub.add_parser("suggest", help="(TODO) Autocomplete via trie.").set_defaults(func=cmd_suggest)
