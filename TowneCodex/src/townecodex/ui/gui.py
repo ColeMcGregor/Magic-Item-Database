@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os
 
-from PySide6.QtCore import Qt, QThreadPool, QStringListModel
+from PySide6.QtCore import Qt, QThreadPool, QStringListModel, QModelIndex
 from PySide6.QtGui import QIcon, QAction, QKeySequence
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
     QMessageBox, QSizePolicy
 )
-from PySide6.QtGui import QFontDatabase, QFont
 
 from townecodex.db import init_db, engine
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
@@ -29,6 +28,7 @@ class MainWindow(QMainWindow):
 
         self.backend = Backend()
         self.pool = QThreadPool.globalInstance()
+
 
         self._build_menubar()
         self._build_toolbar()
@@ -130,6 +130,8 @@ class MainWindow(QMainWindow):
         # Results list
         result_box = QGroupBox("Results"); lb = QVBoxLayout(result_box)
         self.list_view = QListView(); self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.list_view.setAlternatingRowColors(True)
+        self.list_view.clicked.connect(self._on_result_clicked)
         self.list_model = QStringListModel(); self.list_view.setModel(self.list_model)
         lb.addWidget(self.list_view); left_layout.addWidget(result_box, 1)
 
@@ -217,6 +219,23 @@ class MainWindow(QMainWindow):
         for w in (self.txt_import_path, self.txt_default_img, self.chk_scrape):
             w.setEnabled(enabled)
 
+    def _clear_details(self) -> None:
+        self.txt_title.clear()
+        self.txt_type.clear()
+        self.txt_rarity.clear()
+        self.txt_attune.clear()
+        self.txt_value.clear()
+        self.txt_image.clear()
+        self.txt_desc.clear()
+        self.preview.clear()
+
+    def _format_attunement(self, card) -> str:
+        if not card.attunement_required:
+            return "None"
+        if card.attunement_criteria:
+            return f"Requires Attunement ({card.attunement_criteria})"
+        return "Requires Attunement"
+
     def _run_import(self):
         path = self.txt_import_path.text().strip()
         if not path:
@@ -225,6 +244,8 @@ class MainWindow(QMainWindow):
         scrape = self.chk_scrape.currentIndex() == 1
         self._append_log(f"Import starting: {path} (scrape={scrape}, default_image={'yes' if default_img else 'no'})")
         self.statusBar().showMessage("Import running…"); self._toggle_import_ui(False)
+
+        #time the import
 
         worker = ImportWorker(self.backend, path, scrape=scrape, default_image=default_img)
         worker.signals.done.connect(self._on_import_done)
@@ -236,6 +257,37 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Import complete ({count}).", 3000)
         self._toggle_import_ui(True)
         self._refresh()
+
+    def _on_result_clicked(self, index):
+        item = self.list_model.itemFromIndex(index)
+        if not item:
+            return
+
+        # we stored the ID in the item’s UserRole
+        entry_id = item.data(Qt.UserRole)
+        if not entry_id:
+            return
+
+        detail = self.backend.get_item(entry_id)
+        if not detail:
+            return
+
+        # Fill the fields
+        self.txt_title.setText(detail["name"])
+        self.txt_type.setText(detail["type"])
+        self.txt_rarity.setText(detail["rarity"])
+
+        att = "Requires Attunement"
+        if detail["attunement_required"] and detail["attunement_criteria"]:
+            att += f" ({detail['attunement_criteria']})"
+        elif not detail["attunement_required"]:
+            att = "None"
+
+        self.txt_attune.setText(att)
+
+        self.txt_value.setText(str(detail["value"]) if detail["value"] != "" else "")
+        self.txt_image.setText(detail["image_url"])
+        self.txt_desc.setPlainText(detail["description"])
 
     def _on_import_error(self, msg: str):
         self._append_log(f"ERROR: {msg}")
