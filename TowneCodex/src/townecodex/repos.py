@@ -390,6 +390,35 @@ class EntryRepository:
     def list(self, *, page: int = 1, size: int = 50, sort: Optional[str] = None) -> List[Entry]:
         return self.search(filters=EntryFilters(), page=page, size=size, sort=sort)
 
+        # -- iterators for bulk operations ----------------------------------------
+
+    def iter_missing_price(self, session):
+        """
+        Yield entries whose price is missing (value is NULL/None).
+        Intended for bulk auto-pricing passes.
+        """
+        return (
+            session.query(Entry)
+            .filter(Entry.value.is_(None))
+            .yield_per(100)
+        )
+
+    def iter_needing_scrape(self, session):
+        """
+        Yield entries that have a source_link but are missing description and/or image.
+        Intended for bulk scraping passes.
+        """
+        return (
+            session.query(Entry)
+            .filter(Entry.source_link.isnot(None))
+            .filter(
+                (Entry.description.is_(None)) |
+                (Entry.image_url.is_(None))
+            )
+            .yield_per(50)
+        )
+
+
 
 # --- Generator Repository ------------------------------------------------------
 
