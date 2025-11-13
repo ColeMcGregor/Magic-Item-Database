@@ -1,11 +1,23 @@
 from __future__ import annotations
-from sqlalchemy import String, Text, Boolean, ForeignKey, DateTime, func, UniqueConstraint, Integer
+
+from datetime import datetime
+
+from sqlalchemy import (
+    String,
+    Text,
+    Boolean,
+    ForeignKey,
+    DateTime,
+    func,
+    UniqueConstraint,
+    Integer,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 """
 These are data models for the Towne Codex database.
-they are for the tables in the database.
-they include:
+They are for the tables in the database.
+They include:
 
 - Entry
 - GeneratorDef
@@ -13,20 +25,27 @@ they include:
 - InventoryItem
 
 author: Cole McGregor
-date: 2025-09-17
-version: 0.1.0
+date: 2025-11-13
+version: 0.2.0
 """
 
 
-# Declarative base for SQLAlchemy 2.x
+# ---------------------------------------------------------------------------
+# Base
+# ---------------------------------------------------------------------------
+
 class Base(DeclarativeBase):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Entry
+# ---------------------------------------------------------------------------
+
 class Entry(Base):
     """
     Represents an item/entry (e.g., potion, weapon, armor).
-    Parsed from fed files elsewhere
+    Parsed from fed files elsewhere.
     """
     __tablename__ = "entries"
 
@@ -61,34 +80,83 @@ class Entry(Base):
         return f"<Entry(id={self.id}, name={self.name!r}, rarity={self.rarity!r})>"
 
 
+# ---------------------------------------------------------------------------
+# GeneratorDef
+# ---------------------------------------------------------------------------
+
 class GeneratorDef(Base):
     """
     Defines a generator configuration (e.g., shop, NPC loot, monster drops).
+
+    The detailed rules (globals + buckets) are stored as JSON in `config_json`,
+    interpreted by the generator engine.
     """
     __tablename__ = "generators"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    context: Mapped[str] = mapped_column(String, nullable=False)
 
-    # Bounds and rules
-    min_items: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    max_items: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    rarity_bias: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Human-facing identity
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    context: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+        doc="Optional context hint, e.g. 'shop', 'npc', 'boss_loot'.",
+    )
+    description: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        doc="Optional DM-facing notes about this generator.",
+    )
 
+    # Serialized configuration (JSON text)
+    config_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        doc="JSON-encoded GeneratorConfig (globals + buckets).",
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<GeneratorDef(id={self.id}, name={self.name!r})>"
+
+
+# ---------------------------------------------------------------------------
+# InventoryItem
+# ---------------------------------------------------------------------------
 
 class InventoryItem(Base):
     """
     Join table (association object) between Inventory and Entry with extra fields.
     """
     __tablename__ = "inventory_items"
-    __table_args__ = (UniqueConstraint("inventory_id", "entry_id", name="uq_inventory_entry"),)
+    __table_args__ = (
+        UniqueConstraint("inventory_id", "entry_id", name="uq_inventory_entry"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    inventory_id: Mapped[int] = mapped_column(ForeignKey("inventories.id", ondelete="CASCADE"), index=True, nullable=False)
-    entry_id: Mapped[int] = mapped_column(ForeignKey("entries.id", ondelete="CASCADE"), index=True, nullable=False)
+    inventory_id: Mapped[int] = mapped_column(
+        ForeignKey("inventories.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    entry_id: Mapped[int] = mapped_column(
+        ForeignKey("entries.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
 
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     unit_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -107,8 +175,15 @@ class InventoryItem(Base):
         return self.quantity * self.effective_unit_value
 
     def __repr__(self) -> str:
-        return f"<InventoryItem(inv_id={self.inventory_id}, entry_id={self.entry_id}, qty={self.quantity})>"
+        return (
+            f"<InventoryItem(inv_id={self.inventory_id}, "
+            f"entry_id={self.entry_id}, qty={self.quantity})>"
+        )
 
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
 
 class Inventory(Base):
     """
@@ -120,7 +195,11 @@ class Inventory(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
     context: Mapped[str | None] = mapped_column(String, nullable=True)
     budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[str] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        nullable=False,
+    )
 
     # Relationships
     items: Mapped[list["InventoryItem"]] = relationship(
@@ -129,7 +208,13 @@ class Inventory(Base):
         passive_deletes=True,
     )
 
-    def add_entry(self, entry: "Entry", *, quantity: int = 1, unit_value: int | None = None) -> InventoryItem:
+    def add_entry(
+        self,
+        entry: Entry,
+        *,
+        quantity: int = 1,
+        unit_value: int | None = None,
+    ) -> InventoryItem:
         ii = InventoryItem(entry=entry, quantity=quantity, unit_value=unit_value)
         self.items.append(ii)
         return ii
