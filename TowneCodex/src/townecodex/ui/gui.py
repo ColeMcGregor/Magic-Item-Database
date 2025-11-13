@@ -393,24 +393,6 @@ class MainWindow(QMainWindow):
     def _prompt_import(self):
         self.mode_combo.setCurrentText("Import"); self._browse_import()
 
-    def _gather_query_filters(self):
-        name_contains = self.txt_name.text().strip() or None
-        type_equals = self.cmb_type.currentText()
-        rar = self.cmb_rarity.currentText()
-        rarities = None if rar == "Any" else [rar]
-        att_txt = self.cmb_attune.currentText()
-        if att_txt == "Any":
-            att = None
-        elif att_txt == "Requires Attunement":
-            att = True
-        else:
-            att = False
-        return dict(
-            name_contains=name_contains,
-            type_equals=type_equals,
-            rarities=rarities,
-            attunement_required=att,
-        )
 
     def _on_row_changed(self, current, _previous):
         if not current or not current.isValid():
