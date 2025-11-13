@@ -42,44 +42,54 @@ class RedditScraper:
     @staticmethod
     def clean_description_raw(text: str) -> str:
         """
-        Clean Reddit description:
-        - Find the first '**' that comes after any '&#x200B;'
-        - Cut everything from that '**' onwards
-        - Remove all '&#x200B;' markers
+        Clean raw Reddit description:
+
+        - Keep all lines normally.
+        - BUT: after the 4th line (index >= 4), if any line starts with '**',
+        then CUT the description at that line (remove everything below).
+        - Remove zero-width markers by turning them into line breaks.
         """
         if not text:
-            return text
+            return ""
 
-        marker = text.find("&amp;#x200B;")
-        if marker != -1:
-            cut = text.find("**", marker)
-            if cut != -1:
-                text = text[:cut]
+        # Normalize reddit zero-width marker
+        text = text.replace("&#x200B;", "\n").replace("&amp;#x200B;", "\n")
 
-        text = text.replace("&#x200B;", "")
-        return text.strip()
+        lines = text.splitlines()
+        cleaned = []
+
+        for idx, ln in enumerate(lines):
+            stripped = ln.lstrip()
+
+            # Rule:
+            # AFTER line 4 → if it starts with "**", this is the promo block → CUT HERE
+            if idx >= 4 and stripped.startswith("**") and not stripped.startswith("***"):
+                break
+
+            cleaned.append(ln)
+
+        return "\n".join(cleaned).rstrip()
 
     @staticmethod
     def polish_description(text: str) -> str:
+        """
+        Polish description for display:
+
+        - Remove the first **two lines**, regardless of what they contain.
+        - Preserve all remaining lines exactly as they were (including blank lines).
+        """
         if not text:
-            return text
+            return ""
 
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        if lines and lines[0].startswith("**") and lines[0].endswith("**"):
-            lines = lines[1:]  # remove title line
-        if lines and lines[0].startswith("*") and lines[0].endswith("*"):
-            lines = lines[1:]  # remove rarity/attunement line
-        # Rejoin text for further processing
-        text = "\n".join(lines)
+        lines = text.splitlines()
 
-        # Now run your original clipping logic
-        marker = text.find("&#x200B;")
-        if marker != -1:
-            cut = text.find("**", marker)
-            if cut != -1:
-                text = text[:cut]
+        # Remove exactly the first two lines
+        remaining = lines[2:] if len(lines) > 2 else []
 
-        return text.strip()
+        # Rejoin without altering spacing
+        return "\n".join(remaining).strip()
+
+
 
     @staticmethod
     def clean_title(title: str) -> str:
