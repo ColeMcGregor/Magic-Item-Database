@@ -26,7 +26,7 @@ def _format_price(value: Optional[int], value_updated: bool) -> str:
     return f"*{value}" if not value_updated else f"{value}"
 
 
-def _render_desc(
+def _render_description(
     md_text: Optional[str],
     enable_markdown: bool,
     md_renderer: Optional[Callable[[str], str]],
@@ -77,7 +77,7 @@ class HTMLCardRenderer(CardRenderer):
     def render_card(self, c: CardDTO) -> str:
         att = _attunement_text(c.attunement_required, c.attunement_criteria)
         price = _format_price(c.value, c.value_updated)
-        desc_html = _render_desc(
+        description_html = _render_description(
             c.description,
             self.enable_markdown,
             self.markdown_renderer,
@@ -101,7 +101,7 @@ class HTMLCardRenderer(CardRenderer):
     Type: {html.escape(c.type or "Unknown")}
   </div>
   {img_html}
-  <div class="desc">{desc_html}</div>
+  <div class="description">{description_html}</div>
 </article>
 """.strip()
 
@@ -169,13 +169,13 @@ class HTMLCardRenderer(CardRenderer):
     margin-bottom:.75rem;
   }}
   .card img {{
-    max-width:100%;
+    max-width:50%;
     height:auto;
     display:block;
     border-radius:6px;
     margin:.25rem 0 .75rem;
   }}
-  .desc p {{
+  .description p {{
     margin:.5rem 0;
   }}
   @media print {{
