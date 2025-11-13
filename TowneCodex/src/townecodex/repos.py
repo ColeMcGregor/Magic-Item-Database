@@ -9,6 +9,7 @@ from sqlalchemy import select, update, func, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+from .pricing import compute_price
 from .db import SessionLocal
 from .models import Entry, GeneratorDef
 
@@ -267,6 +268,34 @@ class EntryRepository:
         updated = self.get_by_id(entry_id)
         if updated:
             self._notify_changed(updated)
+
+    def fill_missing_prices_from_chart(self, *, commit: bool = True) -> int:
+        """
+        Walk all entries with value == NULL and set a default price using
+        the pricing chart. Returns the number of entries updated.
+        """
+        updated = 0
+        with SessionLocal() as session:
+            q = session.query(Entry).filter(Entry.value.is_(None))
+            for e in q:
+                price = compute_price(
+                    rarity=e.rarity,
+                    type_text=e.type,
+                    attunement_required=e.attunement_required,
+                )
+                if price is None:
+                    continue
+                e.value = price
+                # this is an automatic chart price, not a user override
+                e.value_updated = False
+                updated += 1
+
+            if commit and updated:
+                session.commit()
+            elif not commit:
+                session.rollback()
+
+        return updated
 
     # -- delete -----------------------------------------------------------------
 
