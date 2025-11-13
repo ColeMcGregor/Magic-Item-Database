@@ -177,7 +177,7 @@ def build_stylesheet() -> str:
         fams = QFontDatabase.applicationFontFamilies(fid)
         if fams:
             family = fams[0]
-            print("Loaded font:", family)
+            # print("Loaded font:", family)
     else:
         print("IMFellEnglish-Regular.ttf not found; using fallback:", family)
 
