@@ -20,8 +20,9 @@ from .db import SessionLocal, engine
 from .models import Entry, GeneratorDef
 from .repos import EntryRepository, GeneratorRepository
 from .scraper import RedditScraper
-from . import importer, query, generator
 
+from . import importer, query
+from .generation.generator_engine import run_generator_from_def
 __all__ = [
     # DB
     "SessionLocal",
@@ -36,5 +37,5 @@ __all__ = [
     "RedditScraper",
     "importer",
     "query",
-    "generator",
+    "run_generator_from_def",
 ]
