@@ -422,21 +422,47 @@ class GeneratorRepository:
     def __init__(self, session_factory=SessionLocal):
         self._session_factory = session_factory
 
+    # -------- CREATE --------
     def insert(self, generator: GeneratorDef) -> GeneratorDef:
         with session_scope(self._session_factory) as s:
             s.add(generator)
             s.flush()
             return generator
 
+    # -------- READ --------
     def get_by_id(self, gen_id: int) -> Optional[GeneratorDef]:
         with session_scope(self._session_factory) as s:
             return s.get(GeneratorDef, gen_id)
+
+    def get_by_name(self, name: str) -> Optional[GeneratorDef]:
+        with session_scope(self._session_factory) as s:
+            stmt = select(GeneratorDef).where(GeneratorDef.name == name)
+            return s.execute(stmt).scalar_one_or_none()
 
     def list_all(self) -> List[GeneratorDef]:
         with session_scope(self._session_factory) as s:
             stmt = select(GeneratorDef).order_by(GeneratorDef.name.asc())
             return list(s.execute(stmt).scalars().all())
 
+    # -------- UPDATE --------
+    def update(self, generator: GeneratorDef) -> GeneratorDef:
+        """
+        Accepts an existing GeneratorDef with modified fields.
+        """
+        with session_scope(self._session_factory) as s:
+            db_obj = s.get(GeneratorDef, generator.id)
+            if not db_obj:
+                raise ValueError(f"Generator {generator.id} not found")
+
+            db_obj.name = generator.name
+            db_obj.context = generator.context
+            db_obj.description = generator.description
+            db_obj.config_json = generator.config_json
+
+            s.flush()
+            return db_obj
+
+    # -------- DELETE --------
     def delete_by_id(self, gen_id: int) -> bool:
         with session_scope(self._session_factory) as s:
             obj = s.get(GeneratorDef, gen_id)
