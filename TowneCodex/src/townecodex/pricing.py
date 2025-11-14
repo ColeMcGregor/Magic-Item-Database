@@ -82,10 +82,8 @@ def compute_price(
     """
     Return the chart price for a given entry, or None if we can't map it.
     """
-    print(f"compute_price: rarity={rarity}, type_text={type_text}, attunement_required={attunement_required}")
 
     category = "consumable" if _is_consumable(type_text) else "other"
-    print(f"category: {category}")
     r = _normalize_rarity(rarity)
     if not r:
         print(f"no rarity: {r}")
@@ -93,10 +91,8 @@ def compute_price(
 
     # For consumables, attunement doesn't matter
     if category == "consumable":
-        print(f"consumable: {_PRICE_TABLE.get((r, category, None))}")
         return _PRICE_TABLE.get((r, category, None))
 
     # For non-consumables, attunement matters. Treat None as False.
     att = bool(attunement_required)
-    print(f"non-consumable: {_PRICE_TABLE.get((r, category, att))}")
     return _PRICE_TABLE.get((r, category, att))
