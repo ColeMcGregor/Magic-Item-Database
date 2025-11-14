@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
-    QMessageBox, QSizePolicy
+    QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem
 )
 
 from townecodex.renderers.html import HTMLCardRenderer
@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         self.backend = Backend()
         self.pool = QThreadPool.globalInstance()
 
+        self.basket: list[CardDTO] = []
 
         self._build_menubar()
         self._build_toolbar()
@@ -57,7 +58,7 @@ class MainWindow(QMainWindow):
         m_file = mb.addMenu("&File")
         m_file.addAction(QAction("New Inventory…", self, triggered=_noop))
         m_file.addAction(QAction("Import…", self, shortcut=QKeySequence("Ctrl+I"), triggered=self._prompt_import))
-        m_file.addAction(QAction("Export…", self, shortcut=QKeySequence("Ctrl+E"), triggered=_noop))
+        m_file.addAction(QAction("Export…", self, shortcut=QKeySequence("Ctrl+E"), triggered=self._export_basket))
         m_file.addSeparator()
         m_file.addAction(QAction("Quit", self, shortcut=QKeySequence("Ctrl+Q"), triggered=self.close))
 
@@ -83,9 +84,10 @@ class MainWindow(QMainWindow):
         for a in (
             QAction("Refresh", self, triggered=self._refresh),
             QAction("Run Generator", self, triggered=_noop),
-            QAction("Export", self, triggered=_noop),
+            QAction("Export Basket", self, triggered=self._export_basket),
         ):
             tb.addAction(a)
+
 
     # ---------- Central ----------
     def _build_central(self):
@@ -155,28 +157,90 @@ class MainWindow(QMainWindow):
         f.addLayout(btn_row, 4, 0, 1, 2)
         left_layout.addWidget(self.filter_box)
 
-        # Results list
-        result_box = QGroupBox("Results"); lb = QVBoxLayout(result_box)
-        self.list_view = QListView(); self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # --- GENERATOR LIST PANEL ---
+        self.generator_list_box = QGroupBox("Generators")
+        gl = QVBoxLayout(self.generator_list_box)
+
+        self.generator_list = QListView()
+        self.generator_model = QStandardItemModel(self.generator_list)
+        self.generator_list.setModel(self.generator_model)
+        self.generator_list.clicked.connect(self._on_generator_selected)
+
+        gl.addWidget(self.generator_list)
+        left_layout.addWidget(self.generator_list_box)
+
+        # Default: hide it until Generator mode is selected
+        self.generator_list_box.hide()
+
+
+        # Results list (Query mode)
+        self.result_box = QGroupBox("Results")
+        lb = QVBoxLayout(self.result_box)
+
+        self.list_view = QListView()
+        self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.list_view.setAlternatingRowColors(True)
         self.list_view.clicked.connect(self._on_result_clicked)
-        self.list_model = QStringListModel(); self.list_view.setModel(self.list_model)
-        lb.addWidget(self.list_view); left_layout.addWidget(result_box, 1)
+
+        self.list_model = QStringListModel()
+        self.list_view.setModel(self.list_model)
+
+        lb.addWidget(self.list_view)
+
+        # Button to push current selection into the basket
+        self.btn_add_to_basket = QPushButton("Add Selected to Basket")
+        self.btn_add_to_basket.setProperty("variant", "primary")
+        self.btn_add_to_basket.clicked.connect(self._add_selected_to_basket)
+        lb.addWidget(self.btn_add_to_basket)
+
+        left_layout.addWidget(self.result_box, 1)
+
 
         # RIGHT
-        right = QWidget(); right_layout = QVBoxLayout(right); right_layout.setContentsMargins(8, 8, 10, 8); right_layout.setSpacing(10)
-        tabs = QTabWidget()
-        detail = QWidget(); dl = QGridLayout(detail)
-        dl.addWidget(QLabel("Title"), 0, 0); self.txt_title = QLineEdit(); dl.addWidget(self.txt_title, 0, 1)
-        dl.addWidget(QLabel("Type"), 1, 0); self.txt_type = QLineEdit(); dl.addWidget(self.txt_type, 1, 1)
-        dl.addWidget(QLabel("Rarity"), 2, 0); self.txt_rarity = QLineEdit(); dl.addWidget(self.txt_rarity, 2, 1)
-        dl.addWidget(QLabel("Attunement"), 3, 0); self.txt_attune = QLineEdit(); dl.addWidget(self.txt_attune, 3, 1)
-        dl.addWidget(QLabel("Value"), 4, 0); self.txt_value = QLineEdit(); dl.addWidget(self.txt_value, 4, 1)
-        dl.addWidget(QLabel("Image URL"), 5, 0); self.txt_image = QLineEdit(); dl.addWidget(self.txt_image, 5, 1)
-        dl.addWidget(QLabel("Description (markdown)"), 6, 0, 1, 2)
-        self.txt_desc = QTextEdit(); self.txt_desc.setPlaceholderText("Item description…"); dl.addWidget(self.txt_desc, 7, 0, 1, 2)
-        tabs.addTab(detail, "Details")
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(8, 8, 10, 8)
+        right_layout.setSpacing(10)
 
+        # Use an instance attribute so other methods can switch tabs
+        self.tabs = QTabWidget()
+
+        # --- Item Details tab ---
+        detail = QWidget()
+        dl = QGridLayout(detail)
+
+        dl.addWidget(QLabel("Title"), 0, 0)
+        self.txt_title = QLineEdit()
+        dl.addWidget(self.txt_title, 0, 1)
+
+        dl.addWidget(QLabel("Type"), 1, 0)
+        self.txt_type = QLineEdit()
+        dl.addWidget(self.txt_type, 1, 1)
+
+        dl.addWidget(QLabel("Rarity"), 2, 0)
+        self.txt_rarity = QLineEdit()
+        dl.addWidget(self.txt_rarity, 2, 1)
+
+        dl.addWidget(QLabel("Attunement"), 3, 0)
+        self.txt_attune = QLineEdit()
+        dl.addWidget(self.txt_attune, 3, 1)
+
+        dl.addWidget(QLabel("Value"), 4, 0)
+        self.txt_value = QLineEdit()
+        dl.addWidget(self.txt_value, 4, 1)
+
+        dl.addWidget(QLabel("Image URL"), 5, 0)
+        self.txt_image = QLineEdit()
+        dl.addWidget(self.txt_image, 5, 1)
+
+        dl.addWidget(QLabel("Description (markdown)"), 6, 0, 1, 2)
+        self.txt_desc = QTextEdit()
+        self.txt_desc.setPlaceholderText("Item description…")
+        dl.addWidget(self.txt_desc, 7, 0, 1, 2)
+
+        self.tabs.addTab(detail, "Details")
+
+        # --- Preview tab ---
         preview_tab = QWidget()
         pl = QVBoxLayout(preview_tab)
         pl.setContentsMargins(4, 4, 4, 4)
@@ -199,10 +263,88 @@ class MainWindow(QMainWindow):
         pl.addLayout(toolbar)
         pl.addWidget(self.preview)
 
-        tabs.addTab(preview_tab, "Preview")
+        self.tabs.addTab(preview_tab, "Preview")
 
-        self.log = QTextEdit(); self.log.setReadOnly(True); tabs.addTab(self.log, "Log")
-        right_layout.addWidget(tabs)
+        # --- Generator Details tab ---
+        self.tab_generator_details = QWidget()
+        gl = QGridLayout(self.tab_generator_details)
+
+        self.gen_name = QLineEdit()
+        gl.addWidget(QLabel("Name"), 0, 0)
+        gl.addWidget(self.gen_name, 0, 1)
+
+        self.gen_context = QLineEdit()
+        gl.addWidget(QLabel("Context"), 1, 0)
+        gl.addWidget(self.gen_context, 1, 1)
+
+        self.gen_min_items = QLineEdit()
+        gl.addWidget(QLabel("Min Items"), 2, 0)
+        gl.addWidget(self.gen_min_items, 2, 1)
+
+        self.gen_max_items = QLineEdit()
+        gl.addWidget(QLabel("Max Items"), 3, 0)
+        gl.addWidget(self.gen_max_items, 3, 1)
+
+        self.gen_budget = QLineEdit()
+        gl.addWidget(QLabel("Budget"), 4, 0)
+        gl.addWidget(self.gen_budget, 4, 1)
+
+        # For buckets you’ll later replace with a structured widget
+        self.gen_buckets = QTextEdit()
+        gl.addWidget(QLabel("Buckets"), 5, 0, 1, 2)
+        gl.addWidget(self.gen_buckets, 6, 0, 1, 2)
+
+        self.tabs.addTab(self.tab_generator_details, "Generator Details")
+
+        # --- Basket tab ---
+        self.basket_tab = QWidget()
+        bl = QVBoxLayout(self.basket_tab)
+
+        # Table: Name | Rarity | Type | Value | [Remove button]
+        self.basket_table = QTableWidget(0, 5)
+        self.basket_table.setHorizontalHeaderLabels(
+            ["Name", "Rarity", "Type", "Value", ""]
+        )
+        self.basket_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.basket_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        self.basket_table.setColumnWidth(0, 320)   # Name
+        self.basket_table.setColumnWidth(1, 90)    # Rarity
+        self.basket_table.setColumnWidth(2, 160)   # Type
+        self.basket_table.setColumnWidth(3, 100)    # Value
+        self.basket_table.setColumnWidth(4, 100)    # Remove
+
+        bl.addWidget(self.basket_table)
+
+        basket_buttons = QHBoxLayout()
+        self.btn_clear_basket = QPushButton("Clear Basket")
+        self.btn_clear_basket.setProperty("variant", "flat")
+        self.btn_clear_basket.clicked.connect(self._clear_basket)
+
+        self.btn_export_basket = QPushButton("Export Basket…")
+        self.btn_export_basket.setProperty("variant", "primary")
+        self.btn_export_basket.clicked.connect(self._export_basket)
+
+        self.lbl_basket_total = QLabel("Total value: 0")
+        self.lbl_basket_total.setStyleSheet("font-weight: bold;")
+
+        basket_buttons.addWidget(self.btn_clear_basket)
+        basket_buttons.addWidget(self.btn_export_basket)
+        basket_buttons.addStretch(1)
+        basket_buttons.addWidget(self.lbl_basket_total)
+
+        bl.addLayout(basket_buttons)
+
+        self.tabs.addTab(self.basket_tab, "Basket")
+
+        
+        # --- Log tab ---
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.tabs.addTab(self.log, "Log")
+
+        right_layout.addWidget(self.tabs)
+
 
         splitter.addWidget(left); splitter.addWidget(right)
         splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
@@ -257,8 +399,88 @@ class MainWindow(QMainWindow):
 
     def _on_mode_changed(self, _idx: int):
         mode = self.mode_combo.currentText()
-        self.filter_box.setVisible(mode == "Query"); self.import_box.setVisible(mode == "Import")
+
+        is_query = (mode == "Query")
+        is_import = (mode == "Import")
+        is_generator = (mode == "Generator")
+
+        # Left-side modes
+        self.filter_box.setVisible(is_query)
+        self.import_box.setVisible(is_import)
+        self.generator_list_box.setVisible(is_generator)
+
+        # Show Query results only in Query mode
+        self.result_box.setVisible(is_query)
+
+        # Right-side tabs
+        self.tab_generator_details.setVisible(is_generator)
+
+        if is_generator:
+            self.tabs.setCurrentWidget(self.tab_generator_details)
+            self._load_generators()
+
         self.statusBar().showMessage(f"Mode: {mode}", 1500)
+
+
+    def _load_generators(self) -> None:
+        """
+        Populate the generator list on the left from the backend.
+        Expects Backend to provide list_generators() -> list[GeneratorDef].
+        """
+        self.generator_model.clear()
+
+        try:
+            generators = self.backend.list_generators()
+        except Exception as exc:
+            self._append_log(f"GEN LOAD ERROR: {exc}")
+            QMessageBox.critical(self, "Generators", f"Failed to load generators:\n{exc}")
+            return
+
+        for g in generators:
+            item = QStandardItem(g.name or f"Generator {getattr(g, 'id', '?')}")
+            item.setEditable(False)
+            # stash id for _on_generator_selected
+            item.setData(getattr(g, "id", None), Qt.UserRole)
+            self.generator_model.appendRow(item)
+
+        self._append_log(f"Loaded {len(generators)} generator(s).")
+
+
+
+    def _on_generator_selected(self, index: QModelIndex) -> None:
+        if not index.isValid():
+            return
+
+        gen_id = index.data(Qt.UserRole)
+        if gen_id is None:
+            return
+
+        g = self.backend.get_generator(int(gen_id))
+        if not g:
+            return
+
+        # Basic fields
+        self.gen_name.setText(g.name or "")
+        self.gen_context.setText(getattr(g, "context", "") or "")
+        self.gen_min_items.setText("" if getattr(g, "min_items", None) is None else str(g.min_items))
+        self.gen_max_items.setText("" if getattr(g, "max_items", None) is None else str(g.max_items))
+        self.gen_budget.setText("" if getattr(g, "budget", None) is None else str(g.budget))
+
+        # Buckets – only if/when you actually add them to the model
+        if hasattr(g, "buckets") and g.buckets:
+            lines = []
+            for b in g.buckets:
+                line = f"- {b.name}: {b.min_items}-{b.max_items}, rarity ≤ {b.max_rarity}"
+                lines.append(line)
+            self.gen_buckets.setPlainText("\n".join(lines))
+        else:
+            self.gen_buckets.clear()
+
+        # Switch tab automatically
+        self.tabs.setCurrentWidget(self.tab_generator_details)
+
+
+
 
     def _run_auto_price(self) -> None:
         """
@@ -487,6 +709,130 @@ class MainWindow(QMainWindow):
 
         #  CardDTO
         return data
+
+    def _add_selected_to_basket(self) -> None:
+        """
+        Take the currently selected entry in the Results list, build a CardDTO,
+        and push it into the basket.
+        """
+        dto = self._build_dto_for_selected()
+        if dto is None:
+            return
+
+        self.basket.append(dto)
+        self._rebuild_basket_view()
+        self._recompute_basket_total()
+        self.statusBar().showMessage(f"Added '{dto.title}' to basket.", 2000)
+        self._append_log(f"Basket: added {dto.id} / {dto.title!r}")
+
+    def _rebuild_basket_view(self) -> None:
+        """
+        Rebuild the basket table from self.basket.
+        """
+        self.basket_table.setRowCount(0)
+
+        for row_idx, dto in enumerate(self.basket):
+            self.basket_table.insertRow(row_idx)
+
+            # Name
+            self.basket_table.setItem(row_idx, 0, QTableWidgetItem(dto.title or ""))
+
+            # Rarity
+            self.basket_table.setItem(row_idx, 1, QTableWidgetItem(dto.rarity or ""))
+
+            # Type
+            self.basket_table.setItem(row_idx, 2, QTableWidgetItem(dto.type or ""))
+
+            # Value
+            val_str = "" if dto.value is None else str(dto.value)
+            self.basket_table.setItem(row_idx, 3, QTableWidgetItem(val_str))
+
+            # Remove button
+            btn = QPushButton("Remove")
+            btn.setProperty("variant", "flat")
+            btn.clicked.connect(self._remove_basket_row_for_button)
+            self.basket_table.setCellWidget(row_idx, 4, btn)
+
+    def _remove_basket_row_for_button(self) -> None:
+        """
+        Slot for 'Remove' button clicks inside the basket table.
+        Finds the row for the sender button and removes it from both the
+        table and the underlying self.basket list.
+        """
+        btn = self.sender()
+        if btn is None:
+            return
+
+        # Find which row this button is in
+        for row in range(self.basket_table.rowCount()):
+            cell_widget = self.basket_table.cellWidget(row, 4)
+            if cell_widget is btn:
+                # Remove from data and table
+                if 0 <= row < len(self.basket):
+                    removed = self.basket.pop(row)
+                    self._append_log(f"Basket: removed {removed.id} / {removed.title!r}")
+                self.basket_table.removeRow(row)
+                self._recompute_basket_total()
+                self.statusBar().showMessage("Removed item from basket.", 2000)
+                return
+
+    def _clear_basket(self) -> None:
+        """
+        Clear all items from the basket.
+        """
+        if not self.basket:
+            return
+        self.basket.clear()
+        self.basket_table.setRowCount(0)
+        self._recompute_basket_total()
+        self.statusBar().showMessage("Basket cleared.", 2000)
+        self._append_log("Basket: cleared")
+
+    def _recompute_basket_total(self) -> None:
+        """
+        Sum up the values of entries currently in the in-memory basket
+        and update the total label.
+        """
+        total = 0
+        for dto in self.basket:
+            if dto.value is not None:
+                try:
+                    total += int(dto.value)
+                except (TypeError, ValueError):
+                    # If something weird sneaks in, just skip it
+                    continue
+
+        self.lbl_basket_total.setText(f"Total value: {total}")
+
+    def _export_basket(self) -> None:
+        """
+        Export the current basket to an HTML file using HTMLCardRenderer.
+        """
+        if not self.basket:
+            QMessageBox.information(self, "Export Basket", "Basket is empty; nothing to export.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Basket to HTML",
+            "",
+            "HTML Files (*.html);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            renderer = HTMLCardRenderer(enable_markdown=True)
+            # renderer.write_page expects a list[CardDTO]
+            renderer.write_page(self.basket, path, page_title="Towne Codex — Basket")
+        except Exception as exc:
+            self._append_log(f"EXPORT ERROR: {exc}")
+            QMessageBox.critical(self, "Export failed", f"Failed to export basket:\n{exc}")
+            return
+
+        self._append_log(f"Basket: exported {len(self.basket)} item(s) to {path}")
+        self.statusBar().showMessage(f"Basket exported to {path}", 4000)
+
 
     def _append_log(self, msg: str):
         self.log.append(msg)
