@@ -5,11 +5,12 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Dict, Any, List
 import time
 
-from townecodex.repos import EntryRepository, EntryFilters, session_scope
+from townecodex.repos import EntryRepository, EntryFilters, session_scope, GeneratorRepository
 from townecodex.dto import CardDTO, to_card_dto
 from townecodex.importer import import_file as tc_import_file
 from townecodex.pricing import compute_price
 from townecodex.scraper import RedditScraper
+from townecodex.generation.generator_engine import run_generator_from_def
 
 
 @dataclass(frozen=True)
@@ -38,7 +39,8 @@ class Backend:
     """
 
     def __init__(self):
-        self.repo = EntryRepository()
+        self.entry_repo = EntryRepository()
+        self.gen_repo = GeneratorRepository()
 
     # ------------------------------------------------------------------ #
     # Listing & detail                                                   #
@@ -61,11 +63,11 @@ class Backend:
             rarity_in=[r for r in (rarities or []) if r != "Any"] or None,
             attunement_required=attunement_required,
         )
-        entries = self.repo.search(ef, page=page, size=size, sort="name")
+        entries = self.entry_repo.search(ef, page=page, size=size, sort="name")
         return [ListItem(id=int(e.id), name=e.name or "") for e in entries]
 
     def get_item(self, entry_id: int) -> Optional[CardDTO]:
-        e = self.repo.get_by_id(entry_id)
+        e = self.entry_repo.get_by_id(entry_id)
         if not e:
             return None
         return to_card_dto(e)
@@ -81,15 +83,13 @@ class Backend:
         """
         updated = 0
         # Use the same session factory as the repo
-        with session_scope(self.repo._session_factory) as s:  # type: ignore[attr-defined]
-            for e in self.repo.iter_missing_price(s):
-                print(f"auto-pricing {e.name!r} (id={e.id})")
+        with session_scope(self.entry_repo._session_factory) as s:  # type: ignore[attr-defined]
+            for e in self.entry_repo.iter_missing_price(s):
                 price = compute_price(
                     rarity=e.rarity,
                     type_text=e.type,
                     attunement_required=bool(e.attunement_required),
                 )
-                print(f"price: {price}")
                 if price is None:
                     continue
                 e.value = price
@@ -106,8 +106,8 @@ class Backend:
         """
         updated = 0
 
-        with session_scope(self.repo._session_factory) as s:  # type: ignore[attr-defined]
-            for e in self.repo.iter_needing_scrape(s):
+        with session_scope(self.entry_repo._session_factory) as s:  # type: ignore[attr-defined]
+            for e in self.entry_repo.iter_needing_scrape(s):
                 link = e.source_link or ""
                 if not link or "reddit" not in link.lower():
                     continue
@@ -138,6 +138,39 @@ class Backend:
                     time.sleep(throttle_seconds)
 
         return updated
+
+
+
+     # ------------------------------------------------------------------ #
+    # Generators                                                         #
+    # ------------------------------------------------------------------ #
+
+    def list_generators(self):
+        """
+        Return all GeneratorDef rows for UI listing.
+        (For now we just pass through the model instances.)
+        """
+        return self.gen_repo.list_all()
+
+    def get_generator(self, gen_id: int):
+        """
+        Fetch a generator definition for the UI.
+        Returns the GeneratorDef object or None.
+        """
+        return self.gen_repo.get_by_id(gen_id)
+
+
+    def run_generator(self, gen_id: int) -> List[CardDTO]:
+        """
+        Run a saved generator and return a list of CardDTOs,
+        ready to be dropped into the basket.
+        """
+        gen_def = self.gen_repo.get_by_id(gen_id)
+        if not gen_def:
+            return []
+
+        entries = run_generator_from_def(self.repo, gen_def)
+        return [to_card_dto(e) for e in entries]
 
     # ------------------------------------------------------------------ #
     # Import                                                            #
