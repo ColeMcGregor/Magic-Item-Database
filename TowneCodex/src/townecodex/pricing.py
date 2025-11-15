@@ -16,6 +16,12 @@ _RARITY_KEY = {
     "very rare": "Very Rare",
     "legendary": "Legendary",
     "artifact": "Artifact",
+    "Common": "Common",
+    "Uncommon": "Uncommon",
+    "Rare": "Rare",
+    "Very Rare": "Very Rare",
+    "Legendary": "Legendary",
+    "Artifact": "Artifact",
 }
 
 def _normalize_rarity(rarity: str | None) -> Optional[str]:
