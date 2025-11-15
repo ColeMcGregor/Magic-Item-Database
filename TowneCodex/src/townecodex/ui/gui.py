@@ -1,6 +1,7 @@
 # townecodex/ui/gui.py
 from __future__ import annotations
 import tempfile, webbrowser, os
+from sqlalchemy import inspect
 import html
 
 from PySide6.QtCore import Qt, QThreadPool, QStringListModel, QModelIndex
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 from townecodex.renderers.html import HTMLCardRenderer
 from townecodex.dto import CardDTO
 from townecodex.db import init_db, engine
+from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend, QueryParams
 from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
@@ -55,27 +57,39 @@ class MainWindow(QMainWindow):
     def _build_menubar(self):
         mb = self.menuBar()
 
+        # --- File ---
         m_file = mb.addMenu("&File")
-        m_file.addAction(QAction("New Inventory…", self, triggered=_noop))
-        m_file.addAction(QAction("Import…", self, shortcut=QKeySequence("Ctrl+I"), triggered=self._prompt_import))
-        m_file.addAction(QAction("Export…", self, shortcut=QKeySequence("Ctrl+E"), triggered=self._export_basket))
+        m_file.addAction(QAction("Import Entries…", self,
+                                shortcut=QKeySequence("Ctrl+I"),
+                                triggered=self._prompt_import))
+        m_file.addAction(QAction("Export Basket…", self,
+                                shortcut=QKeySequence("Ctrl+E"),
+                                triggered=self._export_basket))
         m_file.addSeparator()
-        m_file.addAction(QAction("Quit", self, shortcut=QKeySequence("Ctrl+Q"), triggered=self.close))
+        m_file.addAction(QAction("Quit", self,
+                                shortcut=QKeySequence("Ctrl+Q"),
+                                triggered=self.close))
 
-        m_edit = mb.addMenu("&Edit")
-        m_edit.addAction(QAction("Update Price…", self, triggered=_noop))
-        m_edit.addAction(QAction("Edit Entry…", self, triggered=_noop))
-
+        # --- View ---
         m_view = mb.addMenu("&View")
-        m_view.addAction(QAction("Refresh", self, shortcut=QKeySequence("F5"), triggered=self._refresh))
-        m_view.addAction(QAction("Toggle Sidebar", self, triggered=_noop))
+        m_view.addAction(QAction("Refresh", self,
+                                shortcut=QKeySequence("F5"),
+                                triggered=self._refresh))
 
-        m_tools = mb.addMenu("&Tools")
-        m_tools.addAction(QAction("Run Generator…", self, triggered=_noop))
-        m_tools.addAction(QAction("Manage Generators…", self, triggered=_noop))
+        # --- Admin ---
+        m_admin = mb.addMenu("&Admin")
+        m_admin.addAction(QAction("Create DB", self,
+                                triggered=self._admin_create_db))
+        m_admin.addAction(QAction("Delete DB", self,
+                                triggered=self._admin_delete_db))
+        m_admin.addAction(QAction("Reset DB", self,
+                                triggered=self._admin_reset_db))
 
+        # --- Help ---
         m_help = mb.addMenu("&Help")
-        m_help.addAction(QAction("About", self, triggered=lambda: QMessageBox.information(self, "About", ABOUT_TEXT)))
+        m_help.addAction(QAction("About", self,
+                                triggered=lambda: QMessageBox.information(self, "About", ABOUT_TEXT)))
+
 
     # ---------- Toolbar ----------
     def _build_toolbar(self):
@@ -420,6 +434,97 @@ class MainWindow(QMainWindow):
             self._load_generators()
 
         self.statusBar().showMessage(f"Mode: {mode}", 1500)
+
+        # ---------- Admin helpers ----------
+
+    def _db_exists(self) -> bool:
+        """
+        Heuristic: DB 'exists' if the core table (entries) exists.
+        """
+        inspector = inspect(engine)
+        return inspector.has_table("entries")
+
+    def _admin_create_db(self) -> None:
+        """
+        Create DB schema if it does not exist yet.
+        """
+        if self._db_exists():
+            QMessageBox.information(
+                self,
+                "Create DB",
+                "The database schema already exists. Nothing to do.",
+            )
+            return
+
+        resp = QMessageBox.question(
+            self,
+            "Create DB",
+            "Create a new Towne Codex database schema?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        init_db()
+        self._append_log("Admin: created DB schema.")
+        self.statusBar().showMessage("Database created.", 3000)
+
+    def _admin_delete_db(self) -> None:
+        """
+        Drop all tables if the DB exists.
+        """
+        if not self._db_exists():
+            QMessageBox.information(
+                self,
+                "Delete DB",
+                "No Towne Codex database schema was found.",
+            )
+            return
+
+        resp = QMessageBox.question(
+            self,
+            "Delete DB",
+            "This will DROP all Towne Codex tables and permanently delete all items.\n\n"
+            "Are you sure?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        # Drop all tables
+        Base.metadata.drop_all(bind=engine)
+
+        self._append_log("Admin: dropped DB schema.")
+        self.statusBar().showMessage("Database deleted.", 3000)
+
+    def _admin_reset_db(self) -> None:
+        """
+        Drop all tables (if present) and recreate the schema.
+        """
+        msg = (
+            "This will DELETE all existing Towne Codex data and recreate an empty schema.\n\n"
+            "Are you absolutely sure?"
+        )
+        resp = QMessageBox.question(
+            self,
+            "Reset DB",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        if self._db_exists():
+            Base.metadata.drop_all(bind=engine)
+            self._append_log("Admin: reset DB (dropped existing schema).")
+
+        init_db()
+        self._append_log("Admin: reset DB (created new schema).")
+        self.statusBar().showMessage("Database reset.", 3000)
+
 
 
     def _load_generators(self) -> None:
