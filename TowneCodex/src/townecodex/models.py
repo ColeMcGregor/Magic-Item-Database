@@ -57,6 +57,10 @@ class Entry(Base):
     rarity: Mapped[str] = mapped_column(String, nullable=False)
     value: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    #type information for filtering queries
+    general_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    specific_type_tags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Attunement
     attunement_required: Mapped[bool] = mapped_column(Boolean, default=False)
     attunement_criteria: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -225,3 +229,52 @@ class Inventory(Base):
 
     def __repr__(self) -> str:
         return f"<Inventory(id={self.id}, name={self.name!r}, items={len(self.items)})>"
+
+# ---------------------------------------------------------------------------
+# Type Catalog (for filters)
+# ---------------------------------------------------------------------------
+
+class GeneralType(Base):
+    """
+    Catalog of all general item types observed in the data:
+    e.g. 'Armor', 'Weapon', 'Potion', etc.
+    """
+    __tablename__ = "general_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+
+    specific_types: Mapped[list["SpecificType"]] = relationship(
+        back_populates="general_type",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<GeneralType(id={self.id}, name={self.name!r})>"
+
+
+class SpecificType(Base):
+    """
+    Catalog of specific type tags under each GeneralType:
+    e.g. ('Armor', 'Leather'), ('Weapon', 'Greataxe'), ('Weapon', 'Special')
+    """
+    __tablename__ = "specific_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    general_type_id: Mapped[int] = mapped_column(
+        ForeignKey("general_types.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    general_type: Mapped["GeneralType"] = relationship(back_populates="specific_types")
+
+    __table_args__ = (
+        UniqueConstraint("general_type_id", "name", name="uq_specific_per_general"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<SpecificType(id={self.id}, general={self.general_type_id}, name={self.name!r})>"
+
