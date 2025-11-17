@@ -139,7 +139,12 @@ class Backend:
 
         return updated
 
-
+    def get_type_terms(self) -> tuple[List[str], List[str]]:
+        """
+        UI helper: (general_types, specific_types)
+        """
+        gens, specs = self.entry_repo.collect_type_terms()
+        return gens, specs
 
      # ------------------------------------------------------------------ #
     # Generators                                                         #
