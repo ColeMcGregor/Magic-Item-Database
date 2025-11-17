@@ -91,7 +91,14 @@ QPushButton {
   padding: 5px 12px;
   min-height: 28px;
 }
-QPushButton:hover { background-color: #FAF6EE; }
+QPushButton:hover {
+    background-color: #FAF6EE;
+    border: 2px solid #B6B1A7;
+    padding-top: 7px;    /* shift text down 1px */
+    padding-left: 9px;   /* shift text right 1px */
+    padding-bottom: 5px; /* adjust to keep height stable */
+    padding-right: 11px;
+}
 QPushButton:pressed { background-color: #EFE7D8; }
 
 QPushButton[variant="primary"] {
@@ -102,6 +109,9 @@ QPushButton[variant="royal"] {
 }
 QPushButton[variant="danger"] {
   background-color: #9B1B20; color: #FFF5F4; border: 1px solid #9B1B20;
+}
+QPushButton[variant="bulbasaur"] {
+  background-color: #26854c; color: #FFF5F4; border: 1px solid #26854c;
 }
 QPushButton[variant="flat"] {
   background-color: transparent; border: none; color: #6E5B49;
