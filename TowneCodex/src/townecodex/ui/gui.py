@@ -220,8 +220,8 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
 
         # --- Item Details tab ---
-        detail = QWidget()
-        dl = QGridLayout(detail)
+        self.detail = QWidget()
+        dl = QGridLayout(self.detail)
 
         dl.addWidget(QLabel("Title"), 0, 0)
         self.txt_title = QLineEdit()
@@ -252,7 +252,7 @@ class MainWindow(QMainWindow):
         self.txt_desc.setPlaceholderText("Item description…")
         dl.addWidget(self.txt_desc, 7, 0, 1, 2)
 
-        self.tabs.addTab(detail, "Details")
+        self.tabs.addTab(self.detail, "Details")
 
         # --- Preview tab ---
         preview_tab = QWidget()
@@ -287,9 +287,9 @@ class MainWindow(QMainWindow):
         gl.addWidget(QLabel("Name"), 0, 0)
         gl.addWidget(self.gen_name, 0, 1)
 
-        self.gen_context = QLineEdit()
-        gl.addWidget(QLabel("Context"), 1, 0)
-        gl.addWidget(self.gen_context, 1, 1)
+        self.gen_purpose = QLineEdit()
+        gl.addWidget(QLabel("Purpose"), 1, 0)
+        gl.addWidget(self.gen_purpose, 1, 1)
 
         self.gen_min_items = QLineEdit()
         gl.addWidget(QLabel("Min Items"), 2, 0)
@@ -370,7 +370,6 @@ class MainWindow(QMainWindow):
         self.btn_open_browser.clicked.connect(self._open_selected_card)
 
         self._on_mode_changed(self.mode_combo.currentIndex())
-        # self._refresh()
 
 
     # ---------- actions ----------
@@ -412,26 +411,30 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Filters cleared.", 1500)
 
     def _on_mode_changed(self, _idx: int):
-        mode = self.mode_combo.currentText()
+        mode = self.mode_combo.currentIndex()
 
-        is_query = (mode == "Query")
-        is_import = (mode == "Import")
-        is_generator = (mode == "Generator")
+        is_query = (mode == 0)
+        is_generator = (mode == 1)
+        is_import = (mode == 2)
+        
 
         # Left-side modes
         self.filter_box.setVisible(is_query)
         self.import_box.setVisible(is_import)
         self.generator_list_box.setVisible(is_generator)
 
-        # Show Query results only in Query mode
-        self.result_box.setVisible(is_query)
-
-        # Right-side tabs
-        self.tab_generator_details.setVisible(is_generator)
 
         if is_generator:
             self.tabs.setCurrentWidget(self.tab_generator_details)
             self._load_generators()
+
+        if is_import:
+            self.tabs.setCurrentWidget(self.detail)
+        
+        if is_query:
+            self.tabs.setCurrentWidget(self.detail)
+            self._refresh()
+
 
         self.statusBar().showMessage(f"Mode: {mode}", 1500)
 
@@ -566,7 +569,7 @@ class MainWindow(QMainWindow):
 
         # Basic fields
         self.gen_name.setText(g.name or "")
-        self.gen_context.setText(getattr(g, "context", "") or "")
+        self.gen_purpose.setText(getattr(g, "purpose", "") or "")
         self.gen_min_items.setText("" if getattr(g, "min_items", None) is None else str(g.min_items))
         self.gen_max_items.setText("" if getattr(g, "max_items", None) is None else str(g.max_items))
         self.gen_budget.setText("" if getattr(g, "budget", None) is None else str(g.budget))
