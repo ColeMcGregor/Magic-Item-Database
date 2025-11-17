@@ -6,6 +6,8 @@ from pathlib import Path
 from .parsers.base import choose_parser, RawRow, ParserError
 from .scraper import RedditScraper
 from .repos import EntryRepository
+from .utils import derive_type_info
+
 
 """
 Importer pipeline for Towne Codex.
@@ -102,6 +104,10 @@ def import_file(path: str | Path, *, scrape: bool = False, default_image: str | 
     repo = EntryRepository()
     processed = 0
 
+    # Accumulate type info for catalog tables
+    seen_generals: set[str] = set()
+    seen_specifics: dict[str, set[str]] = {}
+
     for row in rows:
         name_csv = (row.get("Name") or row.get("Item") or "").strip()
         type_csv = (row.get("Type") or "").strip()
@@ -123,9 +129,17 @@ def import_file(path: str | Path, *, scrape: bool = False, default_image: str | 
         # Prefer scraped fields where present
         title = (scraped.get("title") or name_csv or "Unknown").strip()
         item_type = type_csv or "Unknown"
+        gen_type, spec_tags = derive_type_info(item_type)
         rarity = (scraped.get("rarity") or rarity_csv or "Unknown").strip()
         desc = scraped.get("description") or None
         image_url = scraped.get("image_url") or None
+
+        # Track type info for catalog
+        if gen_type:
+            seen_generals.add(gen_type)
+            if spec_tags:
+                bucket = seen_specifics.setdefault(gen_type, set())
+                bucket.update(spec_tags)
 
         # --- Robust attunement merge policy ---
         # If the scraper explicitly says "Requires Attunement ...", trust it.
@@ -157,10 +171,17 @@ def import_file(path: str | Path, *, scrape: bool = False, default_image: str | 
             "source_link": link,
             "description": desc,
             "image_url": image_url,
+            "general_type": gen_type,
+            "specific_type_tags": list(spec_tags) if spec_tags else None,
         }
 
         # Centralized write policy (trim, non-empty overwrite, upsert by link/(name,type))
         repo.upsert_entry(data)
         processed += 1
 
+    # Sync the type catalog tables once per import
+    if seen_generals:
+        repo.sync_type_catalog(seen_generals, seen_specifics)
+
     return processed
+
