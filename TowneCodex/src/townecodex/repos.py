@@ -9,9 +9,11 @@ from sqlalchemy import Null, select, update, func, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
+import json
+
 from .pricing import compute_price
 from .db import SessionLocal
-from .models import Entry, GeneratorDef
+from .models import Entry, GeneratorDef, GeneralType, SpecificType
 
 
 # --- Search filters ------------------------------------------------------------
@@ -62,6 +64,36 @@ def _coerce_bool(v: Any, default: bool = False) -> bool:
     if v is None:
         return default
     return bool(v)
+def _normalize_specific_tags(val: Any) -> str | None:
+    """
+    Normalize specific_type_tags into a sorted, deduped JSON array string,
+    or None if nothing usable is provided.
+    """
+    if not val:
+        return None
+
+    # Accept either a single string or any iterable of strings
+    if isinstance(val, str):
+        tags = [val]
+    else:
+        try:
+            tags = list(val)
+        except TypeError:
+            return None
+
+    cleaned: list[str] = []
+    for t in tags:
+        if not isinstance(t, str):
+            continue
+        t2 = t.strip()
+        if t2:
+            cleaned.append(t2)
+
+    if not cleaned:
+        return None
+
+    cleaned = sorted(set(cleaned))
+    return json.dumps(cleaned, separators=(",", ":"))
 
 
 # --- Entry Repository ----------------------------------------------------------
@@ -114,6 +146,11 @@ class EntryRepository:
             stmt = select(Entry).where(Entry.source_link == link)
             return s.execute(stmt).scalar_one_or_none()
 
+
+    #helper
+
+   
+
     # -- upsert/insert ----------------------------------------------------------
 
     def upsert_entry(self, data: Dict[str, Any]) -> Entry:
@@ -151,6 +188,8 @@ class EntryRepository:
                     image_url=data.get("image_url"),
                     value=data.get("value"),
                     value_updated=_coerce_bool(data.get("value_updated"), False),
+                    general_type=_trim(data.get("general_type")) if data.get("general_type") else None,
+                    specific_type_tags_json=_normalize_specific_tags(data.get("specific_type_tags")),
                 )
                 s.add(target)
                 try:
@@ -180,11 +219,21 @@ class EntryRepository:
         # Fallback (shouldn't happen)
         return target  # type: ignore[return-value]
 
-
+    
     def _update_existing_internal(self, target: Entry, data: Dict[str, Any], s: Session) -> Entry:
         # String fields: assign only if non-empty present
         for fld in ("name", "type", "rarity", "attunement_criteria", "description", "image_url"):
             _assign_if_present_nonempty(target, fld, data)
+
+        if "general_type" in data:
+            gt = _trim(data["general_type"])
+            if gt:
+                target.general_type = gt
+
+        if "specific_type_tags" in data:
+            st_json = _normalize_specific_tags(data["specific_type_tags"])
+            if st_json:
+                target.specific_type_tags_json = st_json
 
         # Booleans: explicit control (do not infer from empty)
         if "attunement_required" in data and data["attunement_required"] is not None:
@@ -413,6 +462,89 @@ class EntryRepository:
             )
             .yield_per(50)
         )
+
+
+    def collect_type_terms(self) -> tuple[list[str], list[str]]:
+        """
+        Return (general_types, specific_types) as sorted unique lists,
+        derived from Entry.general_type and Entry.specific_type_tags_json.
+        """
+        import json
+
+        generals: set[str] = set()
+        specifics: set[str] = set()
+
+        with session_scope(self._session_factory) as s:
+            rows = s.query(Entry.general_type, Entry.specific_type_tags_json).all()
+            for gt, st_json in rows:
+                if isinstance(gt, str) and gt.strip():
+                    generals.add(gt.strip())
+
+                if st_json:
+                    try:
+                        tags = json.loads(st_json)
+                    except Exception:
+                        continue
+                    if isinstance(tags, list):
+                        for t in tags:
+                            if isinstance(t, str) and t.strip():
+                                specifics.add(t.strip())
+
+        return sorted(generals), sorted(specifics)
+
+    def sync_type_catalog(
+        self,
+        general_types: set[str],
+        specific_map: dict[str, set[str]],
+    ) -> None:
+        """
+        Ensure general_types / specific_types tables contain at least these values.
+
+        This is a best-effort 'insert new ones' pass; it does not delete anything.
+        """
+        with session_scope(self._session_factory) as s:
+            # 1) General types
+            existing_generals = {
+                gt.name: gt for gt in s.execute(select(GeneralType)).scalars().all()
+            }
+
+            for g_name in sorted(general_types):
+                if not g_name:
+                    continue
+                if g_name not in existing_generals:
+                    gt = GeneralType(name=g_name)
+                    s.add(gt)
+                    s.flush()
+                    existing_generals[g_name] = gt
+
+            # 2) Specific types under each general
+            for g_name, specs in specific_map.items():
+                if not g_name or not specs:
+                    continue
+                gt = existing_generals.get(g_name)
+                if not gt:
+                    # Should not happen if above loop did its job, but be defensive
+                    gt = GeneralType(name=g_name)
+                    s.add(gt)
+                    s.flush()
+                    existing_generals[g_name] = gt
+
+                # Load existing specifics for this general
+                existing_specs = {
+                    st.name
+                    for st in s.execute(
+                        select(SpecificType).where(SpecificType.general_type_id == gt.id)
+                    ).scalars().all()
+                }
+
+                for spec_name in sorted(specs):
+                    if not spec_name or spec_name in existing_specs:
+                        continue
+                    st = SpecificType(name=spec_name, general_type_id=gt.id)
+                    s.add(st)
+
+            # session_scope will commit for us
+
 
 
 
