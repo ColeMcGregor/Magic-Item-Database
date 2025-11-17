@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
-    QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem
+    QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem, QDialog, 
+    QDialogButtonBox, QFormLayout
 )
 
 from townecodex.renderers.html import HTMLCardRenderer
@@ -21,6 +22,11 @@ from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend, QueryParams
 from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
+from townecodex.generation.schema import (
+    GeneratorConfig,
+    BucketConfig,
+    config_from_json,
+)
 
 
 ABOUT_TEXT = f"""
@@ -32,6 +38,156 @@ ABOUT_TEXT = f"""
 def _noop(*_a, **_kw):
     QMessageBox.information(None, "Stub", "This action is not wired yet.")
 
+
+#This is used for filling in the various aspects of a bucket, as I prefered it be popup style
+class BucketDialog(QDialog):
+    """
+    Simple dialog to create/edit a BucketConfig.
+
+    For now it only exposes:
+      - name
+      - min_count / max_count
+      - min_value / max_value
+
+    Leave max fields blank for "no upper bound" / "no price limit".
+    """
+
+    def __init__(self, parent: QWidget | None = None, bucket: BucketConfig | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Bucket")
+
+        self._result_bucket: BucketConfig | None = None
+
+        form = QFormLayout(self)
+
+        # Name
+        self.name_edit = QLineEdit()
+        form.addRow("Name", self.name_edit)
+
+        # Item count range
+        self.min_count_edit = QLineEdit()
+        self.min_count_edit.setPlaceholderText("0")
+        form.addRow("Min items", self.min_count_edit)
+
+        self.max_count_edit = QLineEdit()
+        self.max_count_edit.setPlaceholderText("leave blank for no max")
+        form.addRow("Max items", self.max_count_edit)
+
+        # Price range per item
+        self.min_value_edit = QLineEdit()
+        self.min_value_edit.setPlaceholderText("leave blank for no minimum")
+        form.addRow("Min price (gp)", self.min_value_edit)
+
+        self.max_value_edit = QLineEdit()
+        self.max_value_edit.setPlaceholderText("leave blank for no maximum")
+        form.addRow("Max price (gp)", self.max_value_edit)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        form.addRow(buttons)
+
+        # If editing an existing bucket, prefill
+        if bucket is not None:
+            self._prefill(bucket)
+
+    def _prefill(self, bucket: BucketConfig) -> None:
+        self.name_edit.setText(bucket.name or "")
+        self.min_count_edit.setText(str(bucket.min_count))
+        # -1 means "no upper bound" in our schema
+        if bucket.max_count is not None and bucket.max_count >= 0:
+            self.max_count_edit.setText(str(bucket.max_count))
+        else:
+            self.max_count_edit.clear()
+
+        if bucket.min_value is not None:
+            self.min_value_edit.setText(str(bucket.min_value))
+        if bucket.max_value is not None:
+            self.max_value_edit.setText(str(bucket.max_value))
+
+    def _parse_optional_int(self, text: str) -> int | None:
+        t = text.strip()
+        if not t:
+            return None
+        return int(t)
+
+    def accept(self) -> None:
+        # Validate and build BucketConfig
+        name = (self.name_edit.text() or "").strip()
+        if not name:
+            QMessageBox.warning(self, "Bucket", "Bucket name is required.")
+            return
+
+        try:
+            min_count_text = self.min_count_edit.text().strip()
+            min_count = int(min_count_text) if min_count_text else 0
+        except ValueError:
+            QMessageBox.warning(self, "Bucket", "Min items must be an integer.")
+            return
+
+        if min_count < 0:
+            QMessageBox.warning(self, "Bucket", "Min items cannot be negative.")
+            return
+
+        try:
+            max_count_opt = self._parse_optional_int(self.max_count_edit.text())
+        except ValueError:
+            QMessageBox.warning(self, "Bucket", "Max items must be an integer or blank.")
+            return
+
+        if max_count_opt is not None and max_count_opt < min_count:
+            QMessageBox.warning(
+                self, "Bucket",
+                "Max items cannot be less than min items."
+            )
+            return
+
+        try:
+            min_val_opt = self._parse_optional_int(self.min_value_edit.text())
+        except ValueError:
+            QMessageBox.warning(self, "Bucket", "Min price must be an integer or blank.")
+            return
+
+        try:
+            max_val_opt = self._parse_optional_int(self.max_value_edit.text())
+        except ValueError:
+            QMessageBox.warning(self, "Bucket", "Max price must be an integer or blank.")
+            return
+
+        if (
+            min_val_opt is not None
+            and max_val_opt is not None
+            and max_val_opt < min_val_opt
+        ):
+            QMessageBox.warning(
+                self, "Bucket",
+                "Max price cannot be less than min price."
+            )
+            return
+
+        # Map to schema:
+        # - max_count: None -> -1 (no upper bound)
+        max_count = max_count_opt if max_count_opt is not None else -1
+
+        self._result_bucket = BucketConfig(
+            name=name,
+            min_count=min_count,
+            max_count=max_count,
+            min_value=min_val_opt,
+            max_value=max_val_opt,
+        )
+
+        super().accept()
+
+    def result(self) -> BucketConfig | None:
+        return self._result_bucket
+
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -42,6 +198,10 @@ class MainWindow(QMainWindow):
         self.pool = QThreadPool.globalInstance()
 
         self.basket: list[CardDTO] = []
+
+        self.current_generator_def = None        
+        self.current_generator_config = None     
+        self.current_bucket_config = None
 
         self._build_menubar()
         self._build_toolbar()
@@ -279,34 +439,115 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(preview_tab, "Preview")
 
-        # --- Generator Details tab ---
         self.tab_generator_details = QWidget()
         gl = QGridLayout(self.tab_generator_details)
 
+        # --- Generator toolbar (buttons) ---
+        generator_toolbar_row = QHBoxLayout()
+        self.btn_gen_new = QPushButton("New Generator")
+        self.btn_gen_new.setProperty("variant", "bulbasaur")
+
+        self.btn_gen_save = QPushButton("Save Generator")
+        self.btn_gen_save.setProperty("variant", "royal")
+
+        self.btn_gen_delete = QPushButton("Delete Generator")
+        self.btn_gen_delete.setProperty("variant", "danger")
+
+        generator_toolbar_row.addWidget(self.btn_gen_new)
+        generator_toolbar_row.addWidget(self.btn_gen_save)
+        generator_toolbar_row.addWidget(self.btn_gen_delete)
+        generator_toolbar_row.addStretch(1)
+
+        generator_toolbar_container = QWidget()
+        generator_toolbar_container.setLayout(generator_toolbar_row)
+        gl.addWidget(generator_toolbar_container, 0, 0, 1, 2)
+
+        # --- Generator fields ---
         self.gen_name = QLineEdit()
-        gl.addWidget(QLabel("Name"), 0, 0)
-        gl.addWidget(self.gen_name, 0, 1)
+        gl.addWidget(QLabel("Name"), 1, 0)
+        gl.addWidget(self.gen_name, 1, 1)
 
         self.gen_purpose = QLineEdit()
-        gl.addWidget(QLabel("Purpose"), 1, 0)
-        gl.addWidget(self.gen_purpose, 1, 1)
+        gl.addWidget(QLabel("Purpose"), 2, 0)
+        gl.addWidget(self.gen_purpose, 2, 1)
 
         self.gen_min_items = QLineEdit()
-        gl.addWidget(QLabel("Min Items"), 2, 0)
-        gl.addWidget(self.gen_min_items, 2, 1)
+        gl.addWidget(QLabel("Min Items"), 3, 0)
+        gl.addWidget(self.gen_min_items, 3, 1)
 
         self.gen_max_items = QLineEdit()
-        gl.addWidget(QLabel("Max Items"), 3, 0)
-        gl.addWidget(self.gen_max_items, 3, 1)
+        gl.addWidget(QLabel("Max Items"), 4, 0)
+        gl.addWidget(self.gen_max_items, 4, 1)
 
         self.gen_budget = QLineEdit()
-        gl.addWidget(QLabel("Budget"), 4, 0)
-        gl.addWidget(self.gen_budget, 4, 1)
+        gl.addWidget(QLabel("Budget"), 5, 0)
+        gl.addWidget(self.gen_budget, 5, 1)
 
-        # For buckets you’ll later replace with a structured widget
-        self.gen_buckets = QTextEdit()
-        gl.addWidget(QLabel("Buckets"), 5, 0, 1, 2)
-        gl.addWidget(self.gen_buckets, 6, 0, 1, 2)
+        # BUCKET TOOLBAR BUTTONS----------------------------------
+
+        # --- Bucket toolbar (buttons) ---
+        bucket_toolbar_row = QHBoxLayout()
+
+        self.btn_bucket_add = QPushButton("Add Bucket")
+        self.btn_bucket_add.setProperty("variant", "bulbasaur")
+        self.btn_bucket_add.clicked.connect(self._on_add_bucket_clicked)
+
+        self.btn_bucket_edit = QPushButton("Edit Bucket")
+        self.btn_bucket_edit.setProperty("variant", "royal")
+
+        self.btn_bucket_remove = QPushButton("Remove Selected")
+        self.btn_bucket_remove.setProperty("variant", "danger")
+
+        self.btn_bucket_move_up = QPushButton("Move Up")
+        self.btn_bucket_move_up.setProperty("variant", "flat")
+
+        self.btn_bucket_move_down = QPushButton("Move Down")
+        self.btn_bucket_move_down.setProperty("variant", "flat")
+
+        bucket_toolbar_row.addWidget(self.btn_bucket_add)
+        bucket_toolbar_row.addWidget(self.btn_bucket_edit)
+        bucket_toolbar_row.addWidget(self.btn_bucket_remove)
+        bucket_toolbar_row.addWidget(self.btn_bucket_move_up)
+        bucket_toolbar_row.addWidget(self.btn_bucket_move_down)
+        bucket_toolbar_row.addStretch(1)
+
+        bucket_toolbar_container = QWidget()
+        bucket_toolbar_container.setLayout(bucket_toolbar_row)
+
+        # IMPORTANT: use the correct row index depending on your layout
+        # If your bucket section begins at row 6, do this:
+        gl.addWidget(bucket_toolbar_container, 6, 0, 1, 2)
+
+
+        #------------------------------------------------------
+        # --- Buckets section  ---
+        buckets_label = QLabel("Buckets")
+        gl.addWidget(buckets_label, 7, 0)
+
+        # bucket control buttons (Add/Edit/Delete/Move)
+        buckets_controls_row = QHBoxLayout()
+        buckets_controls_container = QWidget()
+        buckets_controls_container.setLayout(buckets_controls_row)
+        gl.addWidget(buckets_controls_container, 7, 1)
+
+        # Bucket table: Name | Items | Price (per item)
+        self.bucket_table = QTableWidget(0, 3)
+        self.bucket_table.setHorizontalHeaderLabels(
+            ["Name", "Items", "Price (per item)", ""]
+        )
+        self.bucket_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.bucket_table.setSelectionMode(QTableWidget.SingleSelection)
+        self.bucket_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        self.bucket_table.setColumnWidth(0, 420)   # Name
+        self.bucket_table.setRowHeight
+        self.bucket_table.setColumnWidth(1, 90)    # Item count
+        self.bucket_table.setColumnWidth(2, 200)   # Price per item
+        self.bucket_table.setColumnWidth(3, 90)    # Remove
+
+        self.bucket_table.setAlternatingRowColors(True)
+
+        gl.addWidget(self.bucket_table, 8, 0, 1, 2)
 
         self.tabs.addTab(self.tab_generator_details, "Generator Details")
 
@@ -405,6 +646,7 @@ class MainWindow(QMainWindow):
             self.list_model.appendRow(row)
 
         self.statusBar().showMessage(f"{len(items)} result(s).", 2000)
+        self._append_log(f"Loaded {len(items)} items from Entries Table(s).")
 
     def _clear_filters(self):
         self.txt_name.clear(); self.cmb_type.setCurrentIndex(0); self.cmb_rarity.setCurrentIndex(0); self.cmb_attune.setCurrentIndex(0)
@@ -528,6 +770,93 @@ class MainWindow(QMainWindow):
         self._append_log("Admin: reset DB (created new schema).")
         self.statusBar().showMessage("Database reset.", 3000)
 
+    def _refresh_bucket_table(self) -> None:
+        """
+        Rebuild the bucket table from self.current_generator_config.
+        """
+        self.bucket_table.setRowCount(0)
+
+        cfg = self.current_generator_config
+        if cfg is None or not cfg.buckets:
+            return
+
+        for row_idx, bucket in enumerate(cfg.buckets):
+            self.bucket_table.insertRow(row_idx)
+
+            # Name
+            self.bucket_table.setItem(row_idx, 0, QTableWidgetItem(bucket.name or ""))
+
+            # Items: min_count–max_count, with -1 meaning "no upper bound"
+            if bucket.max_count is None or bucket.max_count < 0:
+                items_str = f"{bucket.min_count}–∞"
+            else:
+                items_str = f"{bucket.min_count}–{bucket.max_count}"
+            self.bucket_table.setItem(row_idx, 1, QTableWidgetItem(items_str))
+
+            # Price (per item)
+            if bucket.min_value is None and bucket.max_value is None:
+                price_str = "Any"
+            elif bucket.min_value is not None and bucket.max_value is None:
+                price_str = f"≥ {bucket.min_value} gp"
+            elif bucket.min_value is None and bucket.max_value is not None:
+                price_str = f"≤ {bucket.max_value} gp"
+            else:
+                price_str = f"{bucket.min_value}–{bucket.max_value} gp"
+            self.bucket_table.setItem(row_idx, 2, QTableWidgetItem(price_str))
+
+            # Remove button
+            btn = QPushButton("Remove")
+            btn.setProperty("variant", "flat")
+            btn.clicked.connect(self._remove_bucket_row_for_button)
+            self.bucket_table.setCellWidget(row_idx, 3, btn)
+
+
+    def _remove_bucket_row_for_button(self) -> None:
+        """
+        Slot for 'Remove' button clicks inside the bucket table.
+        Finds the row for the sender button and removes it from both the
+        table and the underlying current_generator_config.buckets list.
+        """
+        btn = self.sender()
+        if btn is None:
+            return
+
+        # Find which row this button is in
+        for row in range(self.bucket_table.rowCount()):
+            cell_widget = self.bucket_table.cellWidget(row, 3)
+            if cell_widget is btn:
+                cfg = self.current_generator_config
+                if cfg is not None and 0 <= row < len(cfg.buckets):
+                    removed = cfg.buckets.pop(row)
+                    self._append_log(f"Generator: removed bucket {removed.name!r}")
+                # Remove from table either way
+                self.bucket_table.removeRow(row)
+                self.statusBar().showMessage("Removed bucket.", 2000)
+                return
+    
+    def _on_add_bucket_clicked(self) -> None:
+        """
+        Handle 'Add Bucket' from the bucket toolbar.
+
+        Opens a BucketDialog, and if accepted, appends a new BucketConfig
+        to self.current_generator_config.buckets and refreshes the table.
+        """
+        # Ensure we have a config object to attach buckets to
+        if self.current_generator_config is None:
+            self.current_generator_config = GeneratorConfig()
+
+        dlg = BucketDialog(self)
+
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        bucket = dlg.result()
+        if bucket is None:
+            return
+
+        self.current_generator_config.buckets.append(bucket)
+        self._append_log(f"Generator: added bucket {bucket.name!r}")
+        self._refresh_bucket_table()
 
 
     def _load_generators(self) -> None:
@@ -556,6 +885,10 @@ class MainWindow(QMainWindow):
 
 
     def _on_generator_selected(self, index: QModelIndex) -> None:
+        """
+        Load a generator from the backend, parse its config_json into a
+        GeneratorConfig, and populate the Generator Details tab.
+        """
         if not index.isValid():
             return
 
@@ -567,28 +900,40 @@ class MainWindow(QMainWindow):
         if not g:
             return
 
+        # Keep the model object around
+        self.current_generator_def = g
+
+        # Parse config_json into a GeneratorConfig
+        cfg: GeneratorConfig
+        raw_cfg = getattr(g, "config_json", None)
+        if raw_cfg:
+            try:
+                cfg = config_from_json(raw_cfg)
+            except Exception as exc:
+                # Fallback to an empty config and log
+                self._append_log(f"GEN CONFIG PARSE ERROR for id={g.id}: {exc}")
+                cfg = GeneratorConfig()
+        else:
+            cfg = GeneratorConfig()
+
+        self.current_generator_config = cfg
+
         # Basic fields
         self.gen_name.setText(g.name or "")
-        self.gen_purpose.setText(getattr(g, "purpose", "") or "")
-        self.gen_min_items.setText("" if getattr(g, "min_items", None) is None else str(g.min_items))
-        self.gen_max_items.setText("" if getattr(g, "max_items", None) is None else str(g.max_items))
-        self.gen_budget.setText("" if getattr(g, "budget", None) is None else str(g.budget))
+        # For now, map gen_purpose to GeneratorDef.context
+        self.gen_purpose.setText(g.context or "")
 
-        # Buckets – only if/when you actually add them to the model
-        if hasattr(g, "buckets") and g.buckets:
-            lines = []
-            for b in g.buckets:
-                line = f"- {b.name}: {b.min_items}-{b.max_items}, rarity ≤ {b.max_rarity}"
-                lines.append(line)
-            self.gen_buckets.setPlainText("\n".join(lines))
-        else:
-            self.gen_buckets.clear()
+        # Global bounds from GeneratorConfig
+        self.gen_min_items.setText("" if cfg.min_items is None else str(cfg.min_items))
+        self.gen_max_items.setText("" if cfg.max_items is None else str(cfg.max_items))
+        # Treat "Budget" as max_total_value for now
+        self.gen_budget.setText("" if cfg.max_total_value is None else str(cfg.max_total_value))
+
+        # Buckets: read-only table projection
+        self._refresh_bucket_table()
 
         # Switch tab automatically
         self.tabs.setCurrentWidget(self.tab_generator_details)
-
-
-
 
     def _run_auto_price(self) -> None:
         """
@@ -653,6 +998,22 @@ class MainWindow(QMainWindow):
         self.txt_image.clear()
         self.txt_desc.clear()
         self.preview.clear()
+
+    def _clear_generator_details(self) -> None:
+        """
+        Clear the Generator Details tab and reset current generator state.
+        """
+        self.current_generator_def = None
+        self.current_generator_config = None
+
+        self.gen_name.clear()
+        self.gen_purpose.clear()
+        self.gen_min_items.clear()
+        self.gen_max_items.clear()
+        self.gen_budget.clear()
+
+        self.bucket_table.setRowCount(0)
+
 
     def _format_attunement(self, card) -> str:
         if not card.attunement_required:
@@ -957,3 +1318,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+
+
