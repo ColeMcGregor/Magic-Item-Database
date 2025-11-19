@@ -545,6 +545,38 @@ class EntryRepository:
 
             # session_scope will commit for us
 
+        # ------------------------------------------------------------------ #
+    # Type catalog helpers                                               #
+    # ------------------------------------------------------------------ #
+
+    def list_general_types(self) -> List[str]:
+        """
+        Return all known general types (e.g. 'Armor', 'Weapon', 'Potion'),
+        sorted alphabetically.
+        """
+        with session_scope(self._session_factory) as s:
+            stmt = select(GeneralType.name).order_by(GeneralType.name.asc())
+            result = s.execute(stmt).all()
+            return [row[0] for row in result]
+
+    def list_specific_types_for(self, general_type: Optional[str] = None) -> List[str]:
+        """
+        Return specific type tags, optionally filtered by a general type.
+
+        Examples:
+          list_specific_types_for('Weapon') -> ['Battleaxe', 'Longsword', ...]
+          list_specific_types_for(None)    -> all known specific tags.
+        """
+        with session_scope(self._session_factory) as s:
+            base = select(SpecificType.name)
+            if general_type:
+                base = base.where(SpecificType.general_type == general_type)
+
+            base = base.order_by(SpecificType.name.asc())
+            result = s.execute(base).all()
+            return [row[0] for row in result]
+
+
 
 
 
