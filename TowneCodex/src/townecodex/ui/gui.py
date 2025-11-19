@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
     QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem, QDialog, 
-    QDialogButtonBox, QFormLayout
+    QDialogButtonBox, QFormLayout, QCheckBox
 )
 
 from townecodex.renderers.html import HTMLCardRenderer
@@ -39,32 +39,25 @@ def _noop(*_a, **_kw):
     QMessageBox.information(None, "Stub", "This action is not wired yet.")
 
 
-#This is used for filling in the various aspects of a bucket, as I prefered it be popup style
 class BucketDialog(QDialog):
     """
-    Simple dialog to create/edit a BucketConfig.
-
-    For now it only exposes:
-      - name
-      - min_count / max_count
-      - min_value / max_value
-
-    Leave max fields blank for "no upper bound" / "no price limit".
+    Full dialog to create/edit a BucketConfig.
     """
 
     def __init__(self, parent: QWidget | None = None, bucket: BucketConfig | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Bucket")
+        self.setMinimumWidth(500)
 
         self._result_bucket: BucketConfig | None = None
 
         form = QFormLayout(self)
 
-        # Name
+        # -------- Name --------
         self.name_edit = QLineEdit()
         form.addRow("Name", self.name_edit)
 
-        # Item count range
+        # -------- Item count range --------
         self.min_count_edit = QLineEdit()
         self.min_count_edit.setPlaceholderText("0")
         form.addRow("Min items", self.min_count_edit)
@@ -73,7 +66,19 @@ class BucketDialog(QDialog):
         self.max_count_edit.setPlaceholderText("leave blank for no max")
         form.addRow("Max items", self.max_count_edit)
 
-        # Price range per item
+        # -------- Allowed rarities --------
+        # User enters comma-separated list (e.g. "Common, Uncommon, Rare")
+        self.rarities_edit = QLineEdit()
+        self.rarities_edit.setPlaceholderText("Comma-separated (optional)")
+        form.addRow("Allowed rarities", self.rarities_edit)
+
+        # -------- Type substring filters --------
+        # Again comma-separated ("weapon, armor", etc.)
+        self.type_contains_edit = QLineEdit()
+        self.type_contains_edit.setPlaceholderText("Comma-separated substrings (optional)")
+        form.addRow("Type contains any", self.type_contains_edit)
+
+        # -------- Price range --------
         self.min_value_edit = QLineEdit()
         self.min_value_edit.setPlaceholderText("leave blank for no minimum")
         form.addRow("Min price (gp)", self.min_value_edit)
@@ -82,7 +87,22 @@ class BucketDialog(QDialog):
         self.max_value_edit.setPlaceholderText("leave blank for no maximum")
         form.addRow("Max price (gp)", self.max_value_edit)
 
-        # Buttons
+        # -------- Attunement (tri-state) --------
+        #   Ignore     = None
+        #   Required   = True
+        #   Forbidden  = False
+        self.attune_combo = QComboBox()
+        self.attune_combo.addItem("Ignore")       # -> None
+        self.attune_combo.addItem("Required")     # -> True
+        self.attune_combo.addItem("Forbidden")    # -> False
+        form.addRow("Attunement", self.attune_combo)
+
+        # -------- Prefer unique --------
+        self.unique_check = QCheckBox("Prefer unique items")
+        self.unique_check.setChecked(True)
+        form.addRow(self.unique_check)
+
+        # -------- Buttons --------
         buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
             parent=self,
@@ -91,23 +111,46 @@ class BucketDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
-        # If editing an existing bucket, prefill
         if bucket is not None:
             self._prefill(bucket)
+
+    # ------------------------------------------------------------------
 
     def _prefill(self, bucket: BucketConfig) -> None:
         self.name_edit.setText(bucket.name or "")
         self.min_count_edit.setText(str(bucket.min_count))
-        # -1 means "no upper bound" in our schema
+
         if bucket.max_count is not None and bucket.max_count >= 0:
             self.max_count_edit.setText(str(bucket.max_count))
         else:
             self.max_count_edit.clear()
 
+        # Rarities
+        if bucket.allowed_rarities:
+            self.rarities_edit.setText(", ".join(bucket.allowed_rarities))
+
+        # Type filters
+        if bucket.type_contains_any:
+            self.type_contains_edit.setText(", ".join(bucket.type_contains_any))
+
+        # Values
         if bucket.min_value is not None:
             self.min_value_edit.setText(str(bucket.min_value))
         if bucket.max_value is not None:
             self.max_value_edit.setText(str(bucket.max_value))
+
+        # Attunement
+        if bucket.attunement_required is None:
+            self.attune_combo.setCurrentIndex(0)
+        elif bucket.attunement_required is True:
+            self.attune_combo.setCurrentIndex(1)
+        else:
+            self.attune_combo.setCurrentIndex(2)
+
+        # Unique
+        self.unique_check.setChecked(bucket.prefer_unique)
+
+    # ------------------------------------------------------------------
 
     def _parse_optional_int(self, text: str) -> int | None:
         t = text.strip()
@@ -115,13 +158,15 @@ class BucketDialog(QDialog):
             return None
         return int(t)
 
+    # ------------------------------------------------------------------
+
     def accept(self) -> None:
-        # Validate and build BucketConfig
         name = (self.name_edit.text() or "").strip()
         if not name:
             QMessageBox.warning(self, "Bucket", "Bucket name is required.")
             return
 
+        # Min count
         try:
             min_count_text = self.min_count_edit.text().strip()
             min_count = int(min_count_text) if min_count_text else 0
@@ -133,6 +178,7 @@ class BucketDialog(QDialog):
             QMessageBox.warning(self, "Bucket", "Min items cannot be negative.")
             return
 
+        # Max count
         try:
             max_count_opt = self._parse_optional_int(self.max_count_edit.text())
         except ValueError:
@@ -146,6 +192,23 @@ class BucketDialog(QDialog):
             )
             return
 
+        max_count = max_count_opt if max_count_opt is not None else -1
+
+        # Rarities
+        rarities_raw = self.rarities_edit.text().strip()
+        allowed_rarities = (
+            [r.strip() for r in rarities_raw.split(",") if r.strip()]
+            if rarities_raw else None
+        )
+
+        # Type filters
+        type_raw = self.type_contains_edit.text().strip()
+        type_contains_any = (
+            [t.strip() for t in type_raw.split(",") if t.strip()]
+            if type_raw else None
+        )
+
+        # Value range
         try:
             min_val_opt = self._parse_optional_int(self.min_value_edit.text())
         except ValueError:
@@ -158,30 +221,42 @@ class BucketDialog(QDialog):
             QMessageBox.warning(self, "Bucket", "Max price must be an integer or blank.")
             return
 
-        if (
-            min_val_opt is not None
-            and max_val_opt is not None
-            and max_val_opt < min_val_opt
-        ):
+        if (min_val_opt is not None and max_val_opt is not None
+                and max_val_opt < min_val_opt):
             QMessageBox.warning(
                 self, "Bucket",
                 "Max price cannot be less than min price."
             )
             return
 
-        # Map to schema:
-        # - max_count: None -> -1 (no upper bound)
-        max_count = max_count_opt if max_count_opt is not None else -1
+        # Attunement tri-state
+        attune_idx = self.attune_combo.currentIndex()
+        if attune_idx == 0:
+            attunement = None
+        elif attune_idx == 1:
+            attunement = True
+        else:
+            attunement = False
 
+        # Prefer unique
+        prefer_unique = self.unique_check.isChecked()
+
+        # Construct result
         self._result_bucket = BucketConfig(
             name=name,
             min_count=min_count,
             max_count=max_count,
+            allowed_rarities=allowed_rarities,
+            type_contains_any=type_contains_any,
             min_value=min_val_opt,
             max_value=max_val_opt,
+            attunement_required=attunement,
+            prefer_unique=prefer_unique,
         )
 
         super().accept()
+
+    # ------------------------------------------------------------------
 
     def result(self) -> BucketConfig | None:
         return self._result_bucket
