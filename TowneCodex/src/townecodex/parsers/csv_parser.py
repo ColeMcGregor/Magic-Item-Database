@@ -180,3 +180,16 @@ class CSVParser(ParserStrategy):
         raise ParserError(
             f"CSV encoding error (tried {', '.join(encodings)}): {last_decode_err}"
         ) from last_decode_err
+
+    # -------------------------------------------------------------------
+    # return (list_of_rows, count)
+    # -------------------------------------------------------------------
+    def parse_with_count(self, path: str | Path):
+        """
+        Parse the CSV and return (rows, total_count).
+
+        This wraps parse() so callers who need the number of rows up front
+        (e.g. for ETA calculations) can get it without changing parse().
+        """
+        rows = list(self.parse(path))
+        return rows, len(rows)
