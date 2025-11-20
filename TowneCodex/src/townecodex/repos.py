@@ -1,4 +1,4 @@
-# towne_codex/repo.py
+# townecodex/repos.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from .models import Entry, GeneratorDef, GeneralType, SpecificType
 @dataclass
 class EntryFilters:
     name_contains: Optional[str] = None
-    type_equals: Optional[str] = None
+    type_contains: Optional[str] = None
     rarity_in: Optional[Sequence[str]] = None
     attunement_required: Optional[bool] = None
     text: Optional[str] = None
@@ -50,6 +50,7 @@ def _trim(s: Optional[str]) -> Optional[str]:
     t = s.strip()
     return t if t else None
 
+
 def _assign_if_present_nonempty(obj: object, field: str, data: Dict[str, Any]) -> None:
     if field not in data:
         return
@@ -60,10 +61,13 @@ def _assign_if_present_nonempty(obj: object, field: str, data: Dict[str, Any]) -
         return
     setattr(obj, field, v)
 
+
 def _coerce_bool(v: Any, default: bool = False) -> bool:
     if v is None:
         return default
     return bool(v)
+
+
 def _normalize_specific_tags(val: Any) -> str | None:
     """
     Normalize specific_type_tags into a sorted, deduped JSON array string,
@@ -146,11 +150,6 @@ class EntryRepository:
             stmt = select(Entry).where(Entry.source_link == link)
             return s.execute(stmt).scalar_one_or_none()
 
-
-    #helper
-
-   
-
     # -- upsert/insert ----------------------------------------------------------
 
     def upsert_entry(self, data: Dict[str, Any]) -> Entry:
@@ -219,7 +218,6 @@ class EntryRepository:
         # Fallback (shouldn't happen)
         return target  # type: ignore[return-value]
 
-    
     def _update_existing_internal(self, target: Entry, data: Dict[str, Any], s: Session) -> Entry:
         # String fields: assign only if non-empty present
         for fld in ("name", "type", "rarity", "attunement_criteria", "description", "image_url"):
@@ -393,9 +391,9 @@ class EntryRepository:
             if filters.name_contains:
                 base = base.where(Entry.name.ilike(f"%{filters.name_contains}%"))
 
-            if filters.type_equals:
-                # decide case-sensitivity policy; ilike is friendlier:
-                base = base.where(Entry.type.ilike(filters.type_equals))
+            if filters.type_contains:
+                q = f"%{filters.type_contains}%"
+                base = base.where(Entry.type.ilike(q))
 
             if filters.rarity_in:
                 # assume caller passes normalized display rarities
@@ -439,7 +437,7 @@ class EntryRepository:
     def list(self, *, page: int = 1, size: int = 50, sort: Optional[str] = None) -> List[Entry]:
         return self.search(filters=EntryFilters(), page=page, size=size, sort=sort)
 
-        # -- iterators for bulk operations ----------------------------------------
+    # -- iterators for bulk operations ----------------------------------------
 
     def iter_missing_price(self, session):
         return (
@@ -462,7 +460,6 @@ class EntryRepository:
             )
             .yield_per(50)
         )
-
 
     def collect_type_terms(self) -> tuple[list[str], list[str]]:
         """
@@ -545,7 +542,7 @@ class EntryRepository:
 
             # session_scope will commit for us
 
-        # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
     # Type catalog helpers                                               #
     # ------------------------------------------------------------------ #
 
@@ -575,9 +572,6 @@ class EntryRepository:
             base = base.order_by(SpecificType.name.asc())
             result = s.execute(base).all()
             return [row[0] for row in result]
-
-
-
 
 
 # --- Generator Repository ------------------------------------------------------

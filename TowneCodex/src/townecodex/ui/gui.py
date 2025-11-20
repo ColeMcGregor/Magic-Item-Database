@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
     QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QListView, QTextEdit, QGroupBox, QTabWidget, QFileDialog,
-    QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem, QDialog, 
+    QMessageBox, QSizePolicy, QTableWidget, QTableWidgetItem, QDialog,
     QDialogButtonBox, QFormLayout, QCheckBox
 )
 
@@ -20,7 +20,7 @@ from townecodex.dto import CardDTO
 from townecodex.db import init_db, engine
 from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
-from townecodex.ui.backend import Backend, QueryParams
+from townecodex.ui.backend import Backend
 from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
 from townecodex.generation.schema import (
     GeneratorConfig,
@@ -274,8 +274,8 @@ class MainWindow(QMainWindow):
 
         self.basket: list[CardDTO] = []
 
-        self.current_generator_def = None        
-        self.current_generator_config = None     
+        self.current_generator_def = None
+        self.current_generator_config = None
         self.current_bucket_config = None
 
         self._build_menubar()
@@ -325,7 +325,6 @@ class MainWindow(QMainWindow):
         m_help.addAction(QAction("About", self,
                                 triggered=lambda: QMessageBox.information(self, "About", ABOUT_TEXT)))
 
-
     # ---------- Toolbar ----------
     def _build_toolbar(self):
         tb = QToolBar("Main"); tb.setMovable(False)
@@ -336,7 +335,6 @@ class MainWindow(QMainWindow):
             QAction("Export Basket", self, triggered=self._export_basket),
         ):
             tb.addAction(a)
-
 
     # ---------- Central ----------
     def _build_central(self):
@@ -360,34 +358,17 @@ class MainWindow(QMainWindow):
         self.txt_import_path = QLineEdit(placeholderText="Select CSV/XLSX file…")
         btn_browse = QPushButton("Browse…"); btn_browse.clicked.connect(self._browse_import)
         self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
-        self.chk_scrape = QComboBox(); self.chk_scrape.addItems(["Don't scrape Reddit", "Scrape Reddit"])
         btn_run_import = QPushButton("Run Import")
         btn_run_import.setProperty("variant", "primary")
         btn_run_import.clicked.connect(self._run_import)
 
-        # new: tools for bulk operations
-        btn_auto_price = QPushButton("Set All Missing Prices")
-        btn_auto_price.setProperty("variant", "primary")
-        btn_auto_price.clicked.connect(self._run_auto_price)
-
-        btn_scrape_existing = QPushButton("Scrape Existing Entries")
-        btn_scrape_existing.setProperty("variant", "primary")
-        btn_scrape_existing.clicked.connect(self._run_scrape_existing)
 
         r = 0
         ig.addWidget(QLabel("File"), r, 0); ig.addWidget(self.txt_import_path, r, 1); ig.addWidget(btn_browse, r, 2); r += 1
         ig.addWidget(QLabel("Default image"), r, 0); ig.addWidget(self.txt_default_img, r, 1, 1, 2); r += 1
-        ig.addWidget(QLabel("Scraping"), r, 0); ig.addWidget(self.chk_scrape, r, 1, 1, 2); r += 1
         ig.addWidget(btn_run_import, r, 0, 1, 3); r += 1
 
-        tools_row = QHBoxLayout()
-        tools_row.addWidget(btn_auto_price)
-        tools_row.addWidget(btn_scrape_existing)
-        tools_row.addStretch(1)
-        ig.addLayout(tools_row, r, 0, 1, 3)
-
         left_layout.addWidget(self.import_box)
-
 
         # Filters
         self.filter_box = QGroupBox("Filters"); f = QGridLayout(self.filter_box)
@@ -421,7 +402,6 @@ class MainWindow(QMainWindow):
         # Default: hide it until Generator mode is selected
         self.generator_list_box.hide()
 
-
         # Results list (Query mode)
         self.result_box = QGroupBox("Results")
         lb = QVBoxLayout(self.result_box)
@@ -443,7 +423,6 @@ class MainWindow(QMainWindow):
         lb.addWidget(self.btn_add_to_basket)
 
         left_layout.addWidget(self.result_box, 1)
-
 
         # RIGHT
         right = QWidget()
@@ -590,9 +569,7 @@ class MainWindow(QMainWindow):
         bucket_toolbar_container.setLayout(bucket_toolbar_row)
 
         # IMPORTANT: use the correct row index depending on your layout
-        # If your bucket section begins at row 6, do this:
         gl.addWidget(bucket_toolbar_container, 6, 0, 1, 2)
-
 
         #------------------------------------------------------
         # --- Buckets section  ---
@@ -641,8 +618,8 @@ class MainWindow(QMainWindow):
         self.basket_table.setColumnWidth(0, 320)   # Name
         self.basket_table.setColumnWidth(1, 90)    # Rarity
         self.basket_table.setColumnWidth(2, 160)   # Type
-        self.basket_table.setColumnWidth(3, 100)    # Value
-        self.basket_table.setColumnWidth(4, 100)    # Remove
+        self.basket_table.setColumnWidth(3, 100)   # Value
+        self.basket_table.setColumnWidth(4, 100)   # Remove
 
         bl.addWidget(self.basket_table)
 
@@ -667,14 +644,12 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.basket_tab, "Basket")
 
-        
         # --- Log tab ---
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.tabs.addTab(self.log, "Log")
 
         right_layout.addWidget(self.tabs)
-
 
         splitter.addWidget(left); splitter.addWidget(right)
         splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
@@ -687,12 +662,12 @@ class MainWindow(QMainWindow):
 
         self._on_mode_changed(self.mode_combo.currentIndex())
 
-
     # ---------- actions ----------
     def _refresh(self):
         # gather filters only when in Query mode
         name = self.txt_name.text()
         type_ = self.cmb_type.currentText()
+        type_filter = None if type_ == "Any" else type_
         rarity = self.cmb_rarity.currentText()
         attune_txt = self.cmb_attune.currentText()
         attune_required = None
@@ -703,7 +678,7 @@ class MainWindow(QMainWindow):
 
         items = self.backend.list_items(
             name_contains=name,
-            type_equals=type_,
+            type_contains = type_filter,
             rarities=[rarity] if rarity and rarity != "Any" else None,
             attunement_required=attune_required,
         )
@@ -711,13 +686,13 @@ class MainWindow(QMainWindow):
         # populate list
         self.list_model.removeRows(0, self.list_model.rowCount())
         if not isinstance(self.list_model, QStandardItemModel):
-          self.list_model = QStandardItemModel(self.list_view)
-          self.list_view.setModel(self.list_model)
+            self.list_model = QStandardItemModel(self.list_view)
+            self.list_view.setModel(self.list_model)
         for it in items:
             row = QStandardItem(it.name)
             row.setEditable(False)
-            row.setData(it.id, Qt.UserRole)  # stash 
-            
+            row.setData(it.id, Qt.UserRole)  # stash
+
             self.list_model.appendRow(row)
 
         self.statusBar().showMessage(f"{len(items)} result(s).", 2000)
@@ -733,13 +708,11 @@ class MainWindow(QMainWindow):
         is_query = (mode == 0)
         is_generator = (mode == 1)
         is_import = (mode == 2)
-        
 
         # Left-side modes
         self.filter_box.setVisible(is_query)
         self.import_box.setVisible(is_import)
         self.generator_list_box.setVisible(is_generator)
-
 
         if is_generator:
             self.tabs.setCurrentWidget(self.tab_generator_details)
@@ -747,15 +720,14 @@ class MainWindow(QMainWindow):
 
         if is_import:
             self.tabs.setCurrentWidget(self.detail)
-        
+
         if is_query:
             self.tabs.setCurrentWidget(self.detail)
             self._refresh()
 
-
         self.statusBar().showMessage(f"Mode: {mode}", 1500)
 
-        # ---------- Admin helpers ----------
+    # ---------- Admin helpers ----------
 
     def _db_exists(self) -> bool:
         """
@@ -885,7 +857,6 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(self._remove_bucket_row_for_button)
             self.bucket_table.setCellWidget(row_idx, 3, btn)
 
-
     def _remove_bucket_row_for_button(self) -> None:
         """
         Slot for 'Remove' button clicks inside the bucket table.
@@ -908,7 +879,7 @@ class MainWindow(QMainWindow):
                 self.bucket_table.removeRow(row)
                 self.statusBar().showMessage("Removed bucket.", 2000)
                 return
-    
+
     def _on_add_bucket_clicked(self) -> None:
         """
         Handle 'Add Bucket' from the bucket toolbar.
@@ -933,7 +904,6 @@ class MainWindow(QMainWindow):
         self._append_log(f"Generator: added bucket {bucket.name!r}")
         self._refresh_bucket_table()
 
-
     def _load_generators(self) -> None:
         """
         Populate the generator list on the left from the backend.
@@ -956,8 +926,6 @@ class MainWindow(QMainWindow):
             self.generator_model.appendRow(item)
 
         self._append_log(f"Loaded {len(generators)} generator(s).")
-
-
 
     def _on_generator_selected(self, index: QModelIndex) -> None:
         """
@@ -1055,13 +1023,12 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Scrape failed", msg)
         self.statusBar().showMessage("Scrape failed.", 3000)
 
-
     def _browse_import(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select file to import", "", "Data Files (*.csv *.xlsx)")
         if path: self.txt_import_path.setText(path)
 
     def _toggle_import_ui(self, enabled: bool):
-        for w in (self.txt_import_path, self.txt_default_img, self.chk_scrape):
+        for w in (self.txt_import_path, self.txt_default_img):
             w.setEnabled(enabled)
 
     def _clear_details(self) -> None:
@@ -1089,7 +1056,6 @@ class MainWindow(QMainWindow):
 
         self.bucket_table.setRowCount(0)
 
-
     def _format_attunement(self, card) -> str:
         if not card.attunement_required:
             return "None"
@@ -1100,18 +1066,28 @@ class MainWindow(QMainWindow):
     def _run_import(self):
         path = self.txt_import_path.text().strip()
         if not path:
-            QMessageBox.warning(self, "Import", "Choose a CSV/XLSX file."); return
+            QMessageBox.warning(self, "Import", "Choose a CSV/XLSX file.")
+            return
+
         default_img = self.txt_default_img.text().strip() or None
-        scrape = self.chk_scrape.currentIndex() == 1
-        self._append_log(f"Import starting: {path} (scrape={scrape}, default_image={'yes' if default_img else 'no'})")
-        self.statusBar().showMessage("Import running…"); self._toggle_import_ui(False)
 
-        #time the import
+        self._append_log(
+            f"Import starting: {path} (default_image={'yes' if default_img else 'no'})"
+        )
+        self.statusBar().showMessage("Import running…")
+        self._toggle_import_ui(False)
 
-        worker = ImportWorker(self.backend, path, scrape=scrape, default_image=default_img)
+        worker = ImportWorker(
+            self.backend,
+            path,
+            default_image=default_img,
+            batch_size=10,
+            batch_sleep_seconds=5.0,
+        )
         worker.signals.done.connect(self._on_import_done)
         worker.signals.error.connect(self._on_import_error)
         self.pool.start(worker)
+
 
     def _on_import_done(self, count: int):
         self._append_log(f"Import complete. Upserted {count} entries.")
@@ -1159,7 +1135,6 @@ class MainWindow(QMainWindow):
     def _prompt_import(self):
         self.mode_combo.setCurrentText("Import"); self._browse_import()
 
-
     def _on_row_changed(self, current, _previous):
         if not current or not current.isValid():
             return
@@ -1194,7 +1169,7 @@ class MainWindow(QMainWindow):
             sitem = QStandardItem(itm.name)
             sitem.setEditable(False)
             # stash the id for later detail loading
-            sitem.setData(itm.id, Qt.UserRole + 1)
+            sitem.setData(itm.id, Qt.UserRole)
             if not isinstance(self.list_model, QStandardItemModel):
                 self.list_model = QStandardItemModel(self.list_view)
                 self.list_view.setModel(self.list_model)
@@ -1215,7 +1190,6 @@ class MainWindow(QMainWindow):
         html_snippet = renderer.render_card(dto)
         self.preview.setHtml(html_snippet)
 
-
     def _open_selected_card(self):
         dto = self._build_dto_for_selected()
         if dto is None:
@@ -1231,14 +1205,12 @@ class MainWindow(QMainWindow):
 
         webbrowser.open_new_tab(path)
 
-
     def _selected_entry_id(self) -> int | None:
         idx = self.list_view.currentIndex()
         if not idx.isValid():
             return None
         entry_id = idx.data(Qt.UserRole)
         return int(entry_id) if entry_id is not None else None
-
 
     def _build_dto_for_selected(self) -> CardDTO | None:
         entry_id = self._selected_entry_id()
@@ -1251,7 +1223,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Preview", f"Entry {entry_id} not found.")
             return None
 
-        #  CardDTO
+        # CardDTO
         return data
 
     def _add_selected_to_basket(self) -> None:
@@ -1377,7 +1349,6 @@ class MainWindow(QMainWindow):
         self._append_log(f"Basket: exported {len(self.basket)} item(s) to {path}")
         self.statusBar().showMessage(f"Basket exported to {path}", 4000)
 
-
     def _append_log(self, msg: str):
         self.log.append(msg)
 
@@ -1385,7 +1356,7 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication([])
 
-    app.setStyleSheet(build_stylesheet())          
+    app.setStyleSheet(build_stylesheet())
 
     init_db(); print("DB URL:", engine.url)
     w = MainWindow(); w.show()
@@ -1393,7 +1364,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-

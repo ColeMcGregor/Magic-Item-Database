@@ -2,10 +2,16 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from typing import Optional, Sequence, Dict, Any, List
+from typing import Optional, Sequence, List
+
 import time
 
-from townecodex.repos import EntryRepository, EntryFilters, session_scope, GeneratorRepository
+from townecodex.repos import (
+    EntryRepository,
+    EntryFilters,
+    session_scope,
+    GeneratorRepository,
+)
 from townecodex.dto import CardDTO, to_card_dto
 from townecodex.importer import import_file as tc_import_file
 from townecodex.pricing import compute_price
@@ -16,7 +22,7 @@ from townecodex.generation.generator_engine import run_generator_from_def
 @dataclass(frozen=True)
 class QueryParams:
     name_contains: Optional[str] = None
-    type_equals: Optional[str] = None
+    type_contains: Optional[str] = None
     rarity_in: Optional[Sequence[str]] = None
     attunement_required: Optional[bool] = None
     page: int = 1
@@ -32,10 +38,12 @@ class ListItem:
 
 class Backend:
     """
-    Thin application layer for the GUI.
+    Thin application layer for the GUI:
 
-    - Wraps EntryRepository for basic reads.
-    - Owns bulk operations like auto-pricing and scraping.
+    - entry listing and detail lookup
+    - pricing and scraping utilities
+    - generator execution
+    - unified import interface
     """
 
     def __init__(self):
@@ -50,7 +58,7 @@ class Backend:
         self,
         *,
         name_contains: Optional[str] = None,
-        type_equals: Optional[str] = None,
+        type_contains: Optional[str] = None,
         rarities: Optional[Sequence[str]] = None,
         attunement_required: Optional[bool] = None,
         page: int = 1,
@@ -59,30 +67,25 @@ class Backend:
         name_contains = (name_contains or "").strip() or None
         ef = EntryFilters(
             name_contains=name_contains,
-            type_equals=type_equals if (type_equals and type_equals != "Any") else None,
+            type_contains=type_contains,  # already normalized by GUI
             rarity_in=[r for r in (rarities or []) if r != "Any"] or None,
             attunement_required=attunement_required,
         )
         entries = self.entry_repo.search(ef, page=page, size=size, sort="name")
         return [ListItem(id=int(e.id), name=e.name or "") for e in entries]
 
+
     def get_item(self, entry_id: int) -> Optional[CardDTO]:
         e = self.entry_repo.get_by_id(entry_id)
-        if not e:
-            return None
-        return to_card_dto(e)
+        return to_card_dto(e) if e else None
 
     # ------------------------------------------------------------------ #
     # Bulk operations for workers                                       #
     # ------------------------------------------------------------------ #
 
     def auto_price_missing(self) -> int:
-        """
-        Walk entries with NULL/None value and fill them using the rarity/type/attune chart.
-        Returns number of entries updated.
-        """
         updated = 0
-        # Use the same session factory as the repo
+
         with session_scope(self.entry_repo._session_factory) as s:  # type: ignore[attr-defined]
             for e in self.entry_repo.iter_missing_price(s):
                 price = compute_price(
@@ -92,18 +95,14 @@ class Backend:
                 )
                 if price is None:
                     continue
+
                 e.value = price
-                # Automatic chart price, not a user override
                 e.value_updated = False
                 updated += 1
 
         return updated
 
     def scrape_existing_missing(self, throttle_seconds: float = 1.0) -> int:
-        """
-        For existing DB rows that have a source_link but missing description/image,
-        hit Reddit and fill them in. Returns count of successfully scraped entries.
-        """
         updated = 0
 
         with session_scope(self.entry_repo._session_factory) as s:  # type: ignore[attr-defined]
@@ -115,7 +114,6 @@ class Backend:
                 try:
                     data = RedditScraper.fetch_post_data(link)
                 except Exception as exc:
-                    # For now, just log to stdout; GUI worker will surface a generic error
                     print(f"[scrape warn] id={e.id} {e.name!r}: {exc}")
                     continue
 
@@ -140,49 +138,45 @@ class Backend:
         return updated
 
     def get_type_terms(self) -> tuple[List[str], List[str]]:
-        """
-        UI helper: (general_types, specific_types)
-        """
         gens, specs = self.entry_repo.collect_type_terms()
         return gens, specs
 
-     # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------ #
     # Generators                                                         #
     # ------------------------------------------------------------------ #
 
     def list_generators(self):
-        """
-        Return all GeneratorDef rows for UI listing.
-        (For now we just pass through the model instances.)
-        """
         return self.gen_repo.list_all()
 
     def get_generator(self, gen_id: int):
-        """
-        Fetch a generator definition for the UI.
-        Returns the GeneratorDef object or None.
-        """
         return self.gen_repo.get_by_id(gen_id)
 
-
     def run_generator(self, gen_id: int) -> List[CardDTO]:
-        """
-        Run a saved generator and return a list of CardDTOs,
-        ready to be dropped into the basket.
-        """
         gen_def = self.gen_repo.get_by_id(gen_id)
         if not gen_def:
             return []
 
-        entries = run_generator_from_def(self.repo, gen_def)
+        entries = run_generator_from_def(self.entry_repo, gen_def)
         return [to_card_dto(e) for e in entries]
 
     # ------------------------------------------------------------------ #
-    # Import                                                            #
+    # Import                                                             #
     # ------------------------------------------------------------------ #
 
-    def import_file(self, path: str, *, scrape: bool, default_image: str | None) -> int:
+    def import_file(
+        self,
+        path: str,
+        *,
+        default_image: str | None,
+        batch_size: int = 10,
+        batch_sleep_seconds: float = 5.0,
+    ) -> int:
         """
         Delegate to the importer module. This keeps the GUI ignorant of details.
         """
-        return tc_import_file(path, scrape=scrape, default_image=default_image)
+        return tc_import_file(
+            path,
+            default_image=default_image,
+            batch_size=batch_size,
+            batch_sleep_seconds=batch_sleep_seconds,
+        )
