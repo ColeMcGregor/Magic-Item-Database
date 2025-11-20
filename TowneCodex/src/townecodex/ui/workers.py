@@ -1,4 +1,3 @@
-# townecodex/ui/workers.py
 from __future__ import annotations
 
 from typing import Optional, Sequence, List
@@ -23,14 +22,16 @@ class ImportWorker(QRunnable):
         backend: Backend,
         path: str,
         *,
-        scrape: bool,
         default_image: str | None,
+        batch_size: int = 10,
+        batch_sleep_seconds: float = 5.0,
     ):
         super().__init__()
         self.backend = backend
         self.path = path
-        self.scrape = scrape
         self.default_image = default_image
+        self.batch_size = batch_size
+        self.batch_sleep_seconds = batch_sleep_seconds
         self.signals = ImportSignals()
 
     @Slot()
@@ -38,13 +39,13 @@ class ImportWorker(QRunnable):
         try:
             count = self.backend.import_file(
                 self.path,
-                scrape=self.scrape,
                 default_image=self.default_image,
+                batch_size=self.batch_size,
+                batch_sleep_seconds=self.batch_sleep_seconds,
             )
             self.signals.done.emit(count)
         except Exception as e:
             self.signals.error.emit(str(e))
-
 
 # ----------------------------------------------------------------------
 # Query Worker
