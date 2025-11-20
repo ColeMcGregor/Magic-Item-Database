@@ -21,7 +21,7 @@ from .models import Entry, GeneratorDef
 from .repos import EntryRepository, GeneratorRepository
 from .scraper import RedditScraper
 
-from . import importer, query
+from . import importer
 from .generation.generator_engine import run_generator_from_def
 __all__ = [
     # DB
@@ -36,6 +36,5 @@ __all__ = [
     # Services
     "RedditScraper",
     "importer",
-    "query",
     "run_generator_from_def",
 ]
