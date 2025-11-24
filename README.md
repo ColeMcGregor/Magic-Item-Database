@@ -195,22 +195,13 @@ Post-import routines can run pricing, scraping, or both.
 
 pip install -r requirements.txt
 
-shell
-Copy code
-
 ### Database Initialization
 
 python -m townecodex.ui.cli init-db
 
-shell
-Copy code
-
 ### Running the GUI
 
 python -m townecodex.ui.gui
-
-markdown
-Copy code
 
 ### Testing
 
