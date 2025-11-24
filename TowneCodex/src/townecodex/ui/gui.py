@@ -425,21 +425,56 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.import_box)
 
         # Filters
-        self.filter_box = QGroupBox("Filters"); f = QGridLayout(self.filter_box)
+        self.filter_box = QGroupBox("Filters")
+        f = QGridLayout(self.filter_box)
+
         self.txt_name = QLineEdit(placeholderText="name contains…")
-        self.cmb_type = QComboBox(); self.cmb_type.addItems(["Any", "Wondrous Item", "Armor", "Weapon", "Potion"])
-        self.cmb_rarity = QComboBox(); self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"])
-        self.cmb_attune = QComboBox(); self.cmb_attune.addItems(["Any", "Requires Attunement", "No Attunement"])
-        f.addWidget(QLabel("Name"), 0, 0); f.addWidget(self.txt_name, 0, 1)
-        f.addWidget(QLabel("Type"), 1, 0); f.addWidget(self.cmb_type, 1, 1)
-        f.addWidget(QLabel("Rarity"), 2, 0); f.addWidget(self.cmb_rarity, 2, 1)
-        f.addWidget(QLabel("Attunement"), 3, 0); f.addWidget(self.cmb_attune, 3, 1)
+
+        # Structured type filters (populated dynamically)
+        self.cmb_type = QComboBox()     # General type (Armor, Weapon, etc.)
+        self.cmb_subtype = QComboBox()  # Specific tag (Longsword, Heavy, etc.)
+
+        self.cmb_rarity = QComboBox()
+        self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"])
+
+        self.cmb_attune = QComboBox()
+        self.cmb_attune.addItems(["Any", "Requires Attunement", "No Attunement"])
+
+        f.addWidget(QLabel("Name"), 0, 0)
+        f.addWidget(self.txt_name, 0, 1)
+
+        f.addWidget(QLabel("Type"), 1, 0)
+        f.addWidget(self.cmb_type, 1, 1)
+
+        f.addWidget(QLabel("Subtype"), 2, 0)
+        f.addWidget(self.cmb_subtype, 2, 1)
+
+        f.addWidget(QLabel("Rarity"), 3, 0)
+        f.addWidget(self.cmb_rarity, 3, 1)
+
+        f.addWidget(QLabel("Attunement"), 4, 0)
+        f.addWidget(self.cmb_attune, 4, 1)
+
         btn_row = QHBoxLayout()
-        btn_apply = QPushButton("Apply"); btn_apply.setProperty("variant", "primary"); btn_apply.clicked.connect(self._refresh)
-        btn_clear = QPushButton("Clear"); btn_clear.setProperty("variant", "flat"); btn_clear.clicked.connect(self._clear_filters)
-        btn_row.addWidget(btn_apply); btn_row.addWidget(btn_clear); btn_row.addStretch(1)
-        f.addLayout(btn_row, 4, 0, 1, 2)
+        btn_apply = QPushButton("Apply")
+        btn_apply.setProperty("variant", "primary")
+        btn_apply.clicked.connect(self._refresh)
+
+        btn_clear = QPushButton("Clear")
+        btn_clear.setProperty("variant", "flat")
+        btn_clear.clicked.connect(self._clear_filters)
+
+        btn_row.addWidget(btn_apply)
+        btn_row.addWidget(btn_clear)
+        btn_row.addStretch(1)
+
+        f.addLayout(btn_row, 5, 0, 1, 2)
+
         left_layout.addWidget(self.filter_box)
+
+        # Populate type/subtype combos once at startup (will also be refreshed later)
+        self._populate_type_filters(initial=True)
+
 
         # --- GENERATOR LIST PANEL ---
         self.generator_list_box = QGroupBox("Generators")
@@ -718,10 +753,18 @@ class MainWindow(QMainWindow):
 
     # ---------- actions ----------
     def _refresh(self):
+        # Keep type lists in sync with current DB contents
+        self._populate_type_filters()
+
         # gather filters only when in Query mode
         name = self.txt_name.text()
-        type_ = self.cmb_type.currentText()
-        type_filter = None if type_ == "Any" else type_
+
+        general_type = self.cmb_type.currentText()
+        general_type_filter = None if general_type == "Any" else general_type
+
+        subtype = self.cmb_subtype.currentText()
+        subtype_filter = None if subtype == "Any" else subtype
+
         rarity = self.cmb_rarity.currentText()
         attune_txt = self.cmb_attune.currentText()
         attune_required = None
@@ -732,12 +775,13 @@ class MainWindow(QMainWindow):
 
         items = self.backend.list_items(
             name_contains=name,
-            type_contains = type_filter,
+            general_type=general_type_filter,
+            specific_tag=subtype_filter,
             rarities=[rarity] if rarity and rarity != "Any" else None,
             attunement_required=attune_required,
         )
 
-        # populate list
+        # populate list (unchanged)
         self.list_model.removeRows(0, self.list_model.rowCount())
         if not isinstance(self.list_model, QStandardItemModel):
             self.list_model = QStandardItemModel(self.list_view)
@@ -752,9 +796,64 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{len(items)} result(s).", 2000)
         self._append_log(f"Loaded {len(items)} items from Entries Table(s).")
 
+    def _populate_type_filters(self, initial: bool = False) -> None:
+        """
+        Populate the Type/Subtype combos based on current entries.
+
+        Uses Backend.get_type_terms(), which derives from Entry.general_type
+        and Entry.specific_type_tags_json. If there is no data yet and this is
+        the first run, falls back to the legacy hard-coded type list.
+        """
+        try:
+            generals, specifics = self.backend.get_type_terms()
+        except Exception as exc:
+            self._append_log(f"TYPE FILTER ERROR: {exc}")
+            generals, specifics = [], []
+
+        # Preserve current selections where possible
+        current_general = self.cmb_type.currentText() if self.cmb_type.count() else "Any"
+        current_subtype = self.cmb_subtype.currentText() if self.cmb_subtype.count() else "Any"
+
+        # General types
+        self.cmb_type.blockSignals(True)
+        self.cmb_type.clear()
+        self.cmb_type.addItem("Any")
+
+        # If no general types yet and this is the first pass, seed with the old defaults
+        if not generals and initial:
+            generals = ["Wondrous Item", "Armor", "Weapon", "Potion"]
+
+        for g in generals:
+            self.cmb_type.addItem(g)
+
+        idx = self.cmb_type.findText(current_general)
+        self.cmb_type.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_type.blockSignals(False)
+
+        # Subtypes (all known specific tags for now; not filtered by general type yet)
+        self.cmb_subtype.blockSignals(True)
+        self.cmb_subtype.clear()
+        self.cmb_subtype.addItem("Any")
+
+        for s in specifics:
+            self.cmb_subtype.addItem(s)
+
+        idx = self.cmb_subtype.findText(current_subtype)
+        self.cmb_subtype.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_subtype.blockSignals(False)
+
+
     def _clear_filters(self):
-        self.txt_name.clear(); self.cmb_type.setCurrentIndex(0); self.cmb_rarity.setCurrentIndex(0); self.cmb_attune.setCurrentIndex(0)
+        self.txt_name.clear()
+        self.cmb_type.setCurrentIndex(0)
+        self.cmb_subtype.setCurrentIndex(0)
+        self.cmb_rarity.setCurrentIndex(0)
+        self.cmb_attune.setCurrentIndex(0)
         self.statusBar().showMessage("Filters cleared.", 1500)
+        self._refresh()
+
+
+    
 
     def _on_mode_changed(self, _idx: int):
         mode = self.mode_combo.currentIndex()

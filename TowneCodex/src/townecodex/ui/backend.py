@@ -25,6 +25,8 @@ class QueryParams:
     type_contains: Optional[str] = None
     rarity_in: Optional[Sequence[str]] = None
     attunement_required: Optional[bool] = None
+    general_type: Optional[str] = None
+    specific_tag: Optional[str] = None
     page: int = 1
     size: int = 1000
     sort: str = "name"
@@ -58,21 +60,32 @@ class Backend:
         self,
         *,
         name_contains: Optional[str] = None,
-        type_contains: Optional[str] = None,
+        type_contains: Optional[str] = None,  # reserved for free-text type search if needed
+        general_type: Optional[str] = None,
+        specific_tag: Optional[str] = None,
         rarities: Optional[Sequence[str]] = None,
         attunement_required: Optional[bool] = None,
         page: int = 1,
         size: int = 500,
     ) -> List[ListItem]:
         name_contains = (name_contains or "").strip() or None
+
+        general_type_in = None
+        if general_type:
+            general_type_in = [general_type]
+
         ef = EntryFilters(
             name_contains=name_contains,
-            type_contains=type_contains,  # already normalized by GUI
+            # GUI now uses structured typing; this remains for any future free-text callers.
+            type_contains=type_contains,
             rarity_in=[r for r in (rarities or []) if r != "Any"] or None,
             attunement_required=attunement_required,
+            general_type_in=general_type_in,
+            specific_tag=specific_tag,
         )
         entries = self.entry_repo.search(ef, page=page, size=size, sort="name")
         return [ListItem(id=int(e.id), name=e.name or "") for e in entries]
+
 
 
     def get_item(self, entry_id: int) -> Optional[CardDTO]:

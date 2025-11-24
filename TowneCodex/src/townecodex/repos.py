@@ -26,6 +26,10 @@ class EntryFilters:
     attunement_required: Optional[bool] = None
     text: Optional[str] = None
 
+    # New: structured typing filters
+    general_type_in: Optional[Sequence[str]] = None
+    specific_tag: Optional[str] = None
+
 
 # --- Session scope -------------------------------------------------------------
 
@@ -407,6 +411,15 @@ class EntryRepository:
                 base = base.where(
                     (Entry.name.ilike(q)) | (func.coalesce(Entry.description, "").ilike(q))
                 )
+            
+            if filters.general_type_in:
+                base = base.where(Entry.general_type.in_(list(filters.general_type_in)))
+
+            if filters.specific_tag:
+                # specific_type_tags_json is a JSON array string, e.g. ["Armor","Heavy"]
+                # Match on the quoted tag to reduce accidental substring overlap.
+                needle = f'"{filters.specific_tag}"'
+                base = base.where(Entry.specific_type_tags_json.ilike(f"%{needle}%"))
 
             # total
             total = s.execute(
