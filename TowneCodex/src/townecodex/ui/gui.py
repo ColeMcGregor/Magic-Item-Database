@@ -5,7 +5,7 @@ from sqlalchemy import inspect
 import html
 
 from PySide6.QtCore import Qt, QThreadPool, QStringListModel, QModelIndex
-from PySide6.QtGui import QIcon, QAction, QKeySequence
+from PySide6.QtGui import QIcon, QAction, QKeySequence, QActionGroup
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QSplitter, QStatusBar, QToolBar,
@@ -22,6 +22,8 @@ from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend
 from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
+from townecodex import admin_ops
+from townecodex.admin_ops import AdminScope, AdminAction, perform_admin_action
 from townecodex.generation.schema import (
     GeneratorConfig,
     BucketConfig,
@@ -269,9 +271,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_TITLE)
         self.resize(1200, 800)
 
+        self.admin = admin_ops
         self.backend = Backend()
-        self.pool = QThreadPool.globalInstance()
+        self.pool = QThreadPool.globalInstance()    
 
+        self._admin_scope: str = "WHOLE_DB"
         self.basket: list[CardDTO] = []
 
         self.current_generator_def = None
@@ -313,12 +317,62 @@ class MainWindow(QMainWindow):
 
         # --- Admin ---
         m_admin = mb.addMenu("&Admin")
-        m_admin.addAction(QAction("Create DB", self,
-                                triggered=self._admin_create_db))
-        m_admin.addAction(QAction("Delete DB", self,
-                                triggered=self._admin_delete_db))
-        m_admin.addAction(QAction("Reset DB", self,
-                                triggered=self._admin_reset_db))
+
+        # Status / ping
+        act_status = QAction("DB Status…", self, triggered=self._admin_show_status)
+        m_admin.addAction(act_status)
+        m_admin.addSeparator()
+
+        # Nested drop-downs for actions
+        menu_create = m_admin.addMenu("Create")
+        menu_drop   = m_admin.addMenu("Drop")
+        menu_reset  = m_admin.addMenu("Reset")
+        menu_clear  = m_admin.addMenu("Clear")
+
+        # Helper to wire menu items to perform_admin_action
+        def _add_admin_item(menu, label, scope, action):
+            act = QAction(label, self)
+            act.triggered.connect(
+                lambda _checked=False, sc=scope, ac=action: self._admin_perform(sc, ac)
+            )
+            menu.addAction(act)
+
+        # Labels for scopes
+        label_all        = "All (whole DB)"
+        label_entries    = "Entries + Inventories + Types"
+        label_inventories = "Inventories only"
+        label_generators = "Generators only"
+        label_types      = "Type catalog only"
+
+        # CREATE
+        _add_admin_item(menu_create, label_all,        AdminScope.WHOLE_DB,               AdminAction.CREATE)
+        _add_admin_item(menu_create, label_entries,    AdminScope.ENTRIES_AND_DEPENDENTS, AdminAction.CREATE)
+        _add_admin_item(menu_create, label_inventories,AdminScope.INVENTORIES,           AdminAction.CREATE)
+        _add_admin_item(menu_create, label_generators, AdminScope.GENERATORS,             AdminAction.CREATE)
+        _add_admin_item(menu_create, label_types,      AdminScope.TYPE_CATALOG,           AdminAction.CREATE)
+
+        # DROP
+        _add_admin_item(menu_drop, label_all,        AdminScope.WHOLE_DB,               AdminAction.DROP)
+        _add_admin_item(menu_drop, label_entries,    AdminScope.ENTRIES_AND_DEPENDENTS, AdminAction.DROP)
+        _add_admin_item(menu_drop, label_inventories,AdminScope.INVENTORIES,           AdminAction.DROP)
+        _add_admin_item(menu_drop, label_generators, AdminScope.GENERATORS,             AdminAction.DROP)
+        _add_admin_item(menu_drop, label_types,      AdminScope.TYPE_CATALOG,           AdminAction.DROP)
+
+        # RESET
+        _add_admin_item(menu_reset, label_all,        AdminScope.WHOLE_DB,               AdminAction.RESET)
+        _add_admin_item(menu_reset, label_entries,    AdminScope.ENTRIES_AND_DEPENDENTS, AdminAction.RESET)
+        _add_admin_item(menu_reset, label_inventories,AdminScope.INVENTORIES,           AdminAction.RESET)
+        _add_admin_item(menu_reset, label_generators, AdminScope.GENERATORS,             AdminAction.RESET)
+        _add_admin_item(menu_reset, label_types,      AdminScope.TYPE_CATALOG,           AdminAction.RESET)
+
+        # CLEAR
+        _add_admin_item(menu_clear, label_all,        AdminScope.WHOLE_DB,               AdminAction.CLEAR)
+        _add_admin_item(menu_clear, label_entries,    AdminScope.ENTRIES_AND_DEPENDENTS, AdminAction.CLEAR)
+        _add_admin_item(menu_clear, label_inventories,AdminScope.INVENTORIES,           AdminAction.CLEAR)
+        _add_admin_item(menu_clear, label_generators, AdminScope.GENERATORS,             AdminAction.CLEAR)
+        _add_admin_item(menu_clear, label_types,      AdminScope.TYPE_CATALOG,           AdminAction.CLEAR)
+
+
 
         # --- Help ---
         m_help = mb.addMenu("&Help")
@@ -729,93 +783,298 @@ class MainWindow(QMainWindow):
 
     # ---------- Admin helpers ----------
 
-    def _db_exists(self) -> bool:
-        """
-        Heuristic: DB 'exists' if the core table (entries) exists.
-        """
-        inspector = inspect(engine)
-        return inspector.has_table("entries")
+    def _set_admin_scope(self, scope: str) -> None:
+        self._admin_scope = scope
+        label = self._admin_scope_label(scope)
+        self.statusBar().showMessage(f"Admin scope set to: {label}", 2500)
+        self._append_log(f"Admin: scope changed to {scope} ({label})")
 
-    def _admin_create_db(self) -> None:
+    def _admin_scope_label(self, scope: str) -> str:
+        return {
+            "WHOLE_DB": "Whole database (all tables)",
+            "ENTRIES_AND_DEPENDENTS": "Entries + inventories + items + type catalog",
+            "INVENTORIES": "Inventories only",
+            "TYPE_CATALOG": "Type catalog (general & specific types)",
+            "GENERATORS": "Generators only",
+        }.get(scope, scope)
+
+    def _admin_scope_enum(self, key: str) -> AdminScope:
+        if key == "WHOLE_DB":
+            return AdminScope.WHOLE_DB
+        if key == "ENTRIES_AND_DEPENDENTS":
+            return AdminScope.ENTRIES_AND_DEPENDENTS
+        if key == "INVENTORIES":
+            return AdminScope.INVENTORIES
+        if key == "GENERATORS":
+            return AdminScope.GENERATORS
+        if key == "TYPE_CATALOG":
+            return AdminScope.TYPE_CATALOG
+        raise ValueError(f"Unknown scope {key}")
+
+
+    # Convenience wrappers for “current scope” operations ---------------
+
+    def _admin_create_scope_current(self) -> None:
+        self._admin_create_scope(self._admin_scope)
+
+    def _admin_drop_scope_current(self) -> None:
+        self._admin_drop_scope(self._admin_scope)
+
+    def _admin_clear_scope_current(self) -> None:
+        self._admin_clear_scope(self._admin_scope)
+
+    def _admin_ping_status_current(self) -> None:
+        self._admin_ping_status(self._admin_scope)
+
+    # ------------------------------------------------------------------ #
+    # Scope-specific operations      #
+    # ------------------------------------------------------------------ #
+
+    def _admin_create_scope(self, scope_key: str) -> None:
+        scope_enum = self._admin_scope_enum(scope_key)
+        result = perform_admin_action(scope_enum, AdminAction.CREATE)
+
+        if result.success:
+            self._append_log(result.message)
+        else:
+            QMessageBox.warning(self, "Admin Error", result.message)
+            self._append_log(f"ERROR: {result.message}")
+
+
+    def _admin_drop_scope(self, scope_key: str) -> None:
         """
-        Create DB schema if it does not exist yet.
+        Drop tables for the given scope using admin_ops.
+
+        WHOLE_DB:
+            - Drop the entire schema (all tables in metadata).
+        Other scopes:
+            - Drop only the tables mapped to that scope.
         """
-        if self._db_exists():
-            QMessageBox.information(
-                self,
-                "Create DB",
-                "The database schema already exists. Nothing to do.",
-            )
+        label = self._admin_scope_label(scope_key)
+        try:
+            scope_enum = self._admin_scope_enum(scope_key)
+        except ValueError as exc:
+            QMessageBox.critical(self, "Admin error", str(exc))
+            self._append_log(f"ADMIN ERROR: {exc}")
             return
 
-        resp = QMessageBox.question(
-            self,
-            "Create DB",
-            "Create a new Towne Codex database schema?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if resp != QMessageBox.Yes:
-            return
-
-        init_db()
-        self._append_log("Admin: created DB schema.")
-        self.statusBar().showMessage("Database created.", 3000)
-
-    def _admin_delete_db(self) -> None:
-        """
-        Drop all tables if the DB exists.
-        """
-        if not self._db_exists():
-            QMessageBox.information(
-                self,
-                "Delete DB",
-                "No Towne Codex database schema was found.",
-            )
-            return
-
-        resp = QMessageBox.question(
-            self,
-            "Delete DB",
-            "This will DROP all Towne Codex tables and permanently delete all items.\n\n"
-            "Are you sure?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if resp != QMessageBox.Yes:
-            return
-
-        # Drop all tables
-        Base.metadata.drop_all(bind=engine)
-
-        self._append_log("Admin: dropped DB schema.")
-        self.statusBar().showMessage("Database deleted.", 3000)
-
-    def _admin_reset_db(self) -> None:
-        """
-        Drop all tables (if present) and recreate the schema.
-        """
+        # Confirmation
         msg = (
-            "This will DELETE all existing Towne Codex data and recreate an empty schema.\n\n"
-            "Are you absolutely sure?"
+            "This will DROP all tables in the selected scope.\n\n"
+            f"Scope: {label}\n\n"
+            "All data in those tables will be permanently deleted and the schema "
+            "for those tables removed.\n\n"
+            "Are you sure?"
         )
         resp = QMessageBox.question(
             self,
-            "Reset DB",
+            "Admin — Drop Tables",
             msg,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if resp != QMessageBox.Yes:
+            self._append_log(f"Admin: drop scope={scope_key} cancelled by user.")
             return
 
-        if self._db_exists():
-            Base.metadata.drop_all(bind=engine)
-            self._append_log("Admin: reset DB (dropped existing schema).")
+        result = perform_admin_action(scope_enum, AdminAction.DROP)
 
-        init_db()
-        self._append_log("Admin: reset DB (created new schema).")
-        self.statusBar().showMessage("Database reset.", 3000)
+        if result.success:
+            self._append_log(result.message)
+            self.statusBar().showMessage(result.message, 4000)
+            QMessageBox.information(self, "Admin — Drop Tables", result.message)
+        else:
+            self._append_log(f"ADMIN DROP ERROR: {result.message}")
+            QMessageBox.critical(self, "Admin — Drop Failed", result.message)
+
+    def _admin_clear_scope(self, scope_key: str) -> None:
+        """
+        Clear (truncate) all rows in the tables for this scope but keep schema,
+        using admin_ops.clear_scope / perform_admin_action.
+        """
+        label = self._admin_scope_label(scope_key)
+        try:
+            scope_enum = self._admin_scope_enum(scope_key)
+        except ValueError as exc:
+            QMessageBox.critical(self, "Admin error", str(exc))
+            self._append_log(f"ADMIN ERROR: {exc}")
+            return
+
+        msg = (
+            "This will DELETE all rows in the tables for the selected scope, "
+            "but keep the table definitions (schema) intact.\n\n"
+            f"Scope: {label}\n\n"
+            "Cascades:\n"
+            "  • ENTRIES_AND_DEPENDENTS: entries, inventories, inventory_items,\n"
+            "    and type catalog will all be cleared. Generators remain.\n"
+            "  • INVENTORIES: inventories and inventory_items will be cleared.\n"
+            "  • TYPE_CATALOG: general_types and specific_types will be cleared.\n"
+            "  • WHOLE_DB: all known tables will be cleared.\n\n"
+            "Are you sure?"
+        )
+        resp = QMessageBox.question(
+            self,
+            "Admin — Clear Data",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            self._append_log(f"Admin: clear scope={scope_key} cancelled by user.")
+            return
+
+        result = perform_admin_action(scope_enum, AdminAction.CLEAR)
+
+        if result.success:
+            self._append_log(result.message)
+            self.statusBar().showMessage(result.message, 4000)
+            QMessageBox.information(self, "Admin — Clear Data", result.message)
+        else:
+            self._append_log(f"ADMIN CLEAR ERROR: {result.message}")
+            QMessageBox.critical(self, "Admin — Clear Failed", result.message)
+
+    def _admin_ping_status(self, scope: str) -> None:
+        """
+        Stage 1: placeholder DB status ping.
+
+        Later, this will call admin_ops.get_db_status() and show table
+        existence + row counts. For now, just a stub.
+        """
+        label = self._admin_scope_label(scope)
+        msg = (
+            f"[Stage 1] Ping DB status for scope:\n\n{label}\n\n"
+            "In the next stage, this will display table existence and row counts "
+            "using admin_ops.get_db_status()."
+        )
+        QMessageBox.information(self, "DB Status (stub)", msg)
+        self._append_log(f"[STUB] Admin ping status scope={scope} ({label})")
+
+
+    def _admin_show_status(self) -> None:
+        """
+        Ping the DB and show which tables exist and how many rows they have.
+        """
+        try:
+            status = self.admin.get_db_status()
+        except Exception as exc:
+            msg = f"DB status check failed: {exc}"
+            self._append_log(f"Admin: {msg}")
+            QMessageBox.critical(self, "DB Status", msg)
+            self.statusBar().showMessage("DB status check failed.", 3000)
+            return
+
+        lines = []
+        for label in sorted(status.keys()):
+            ts = status[label]
+            if ts.exists:
+                lines.append(
+                    f"{label}: {ts.row_count} row(s) in '{ts.table_name}'"
+                )
+            else:
+                lines.append(
+                    f"{label}: [missing] (no table '{ts.table_name}')"
+                )
+
+        text = "Database status:\n\n" + "\n".join(lines)
+
+        # Log a compact version
+        self._append_log(
+            "Admin: DB status -> " + " | ".join(l.replace("\n", " ") for l in lines)
+        )
+
+        QMessageBox.information(self, "DB Status", text)
+        self.statusBar().showMessage("DB status loaded.", 3000)
+
+    def _confirm_admin_action(self, scope: AdminScope, action: AdminAction) -> bool:
+        """
+        Centralized confirmation dialog for destructive admin actions.
+        """
+        # CREATE is non-destructive
+        if action is AdminAction.CREATE:
+            return True
+
+        scope_label = {
+            AdminScope.WHOLE_DB: "the ENTIRE Towne Codex database",
+            AdminScope.ENTRIES_AND_DEPENDENTS: "Entries + Inventories + Type catalog",
+            AdminScope.INVENTORIES: "Inventories (and their items)",
+            AdminScope.GENERATORS: "Generators",
+            AdminScope.TYPE_CATALOG: "Type catalog (general/specific types)",
+        }.get(scope, str(scope))
+
+        if action is AdminAction.CLEAR:
+            verb = "clear ALL rows from"
+        elif action is AdminAction.DROP:
+            verb = "DROP the tables for"
+        elif action is AdminAction.RESET:
+            verb = "RESET (DROP + CREATE) the tables for"
+        else:
+            verb = f"perform {action.name} on"
+
+        msg = (
+            f"This will {verb} {scope_label}.\n\n"
+            "Are you absolutely sure?"
+        )
+
+        resp = QMessageBox.question(
+            self,
+            "Confirm admin operation",
+            msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return resp == QMessageBox.Yes
+
+
+    def _admin_perform(self, scope: AdminScope, action: AdminAction) -> None:
+        """
+        Execute an admin_ops action for a given scope and wire it into the UI:
+        - confirmation
+        - log
+        - status bar message
+        - refresh when appropriate
+        """
+        # 1. Confirm action
+        if not self._confirm_admin_action(scope, action):
+            self._append_log(f"Admin: {action.name} {scope.name} cancelled.")
+            return
+
+        # 2. Run admin operation
+        try:
+            result = self.admin.perform_admin_action(scope, action)
+        except Exception as exc:
+            msg = f"Admin {action.name} on {scope.name} failed: {exc}"
+            self._append_log("Admin ERROR: " + msg)
+            QMessageBox.critical(self, "Admin error", msg)
+            self.statusBar().showMessage("Admin operation failed.", 4000)
+            return
+
+        # 3. Log result
+        log_msg = f"Admin: [{result.action.name}] {result.message}"
+        self._append_log(log_msg)
+
+        # 4. UI feedback
+        if result.success:
+            self.statusBar().showMessage(result.message, 5000)
+
+            # Refresh item list if entries or whole DB affected
+            if scope in (AdminScope.WHOLE_DB, AdminScope.ENTRIES_AND_DEPENDENTS):
+                try:
+                    self._refresh()
+                except Exception as exc:
+                    self._append_log(f"Admin: refresh after {action.name} failed: {exc}")
+        else:
+            QMessageBox.critical(self, "Admin error", result.message)
+            self.statusBar().showMessage("Admin operation failed.", 5000)
+
+
+
+
+
+
+    # ------------------------------------------------------------------ #
+    # bucket level operations
+    # ------------------------------------------------------------------ #
+
 
     def _refresh_bucket_table(self) -> None:
         """
