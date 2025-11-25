@@ -102,10 +102,10 @@ class GeneratorDef(Base):
 
     # Human-facing identity
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
-    context: Mapped[str | None] = mapped_column(
+    purpose: Mapped[str | None] = mapped_column(
         String,
         nullable=True,
-        doc="Optional context hint, e.g. 'shop', 'npc', 'boss_loot'.",
+        doc="Optional purpose hint, e.g. 'shop', 'npc', 'boss_loot'.",
     )
     description: Mapped[str | None] = mapped_column(
         Text,
@@ -198,7 +198,7 @@ class Inventory(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    context: Mapped[str | None] = mapped_column(String, nullable=True)
+    purpose: Mapped[str | None] = mapped_column(String, nullable=True)
     budget: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
