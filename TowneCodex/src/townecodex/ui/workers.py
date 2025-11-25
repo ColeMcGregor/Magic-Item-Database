@@ -23,8 +23,8 @@ class ImportWorker(QRunnable):
         path: str,
         *,
         default_image: str | None,
-        batch_size: int = 10,
-        batch_sleep_seconds: float = 5.0,
+        batch_size: int = 5,
+        batch_sleep_seconds: float = 2.0,
     ):
         super().__init__()
         self.backend = backend
