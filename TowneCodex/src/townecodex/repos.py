@@ -310,6 +310,77 @@ class EntryRepository:
 
         return created, updated
 
+
+    def create_from_details(self, data: Dict[str, Any]) -> Entry:
+        """
+        Create a brand-new Entry from GUI Details data.
+        No upsert / de-duplication; this is an explicit user action.
+        """
+        # Trim string fields
+        for k in ("name", "type", "rarity", "attunement_criteria", "description", "image_url"):
+            if k in data and isinstance(data[k], str):
+                data[k] = _trim(data[k])
+
+        value = data.get("value")
+        if value in ("", None):
+            value_int = None
+        else:
+            value_int = int(value)
+
+        with session_scope(self._session_factory) as s:
+            e = Entry(
+                name=data.get("name") or "Unknown",
+                type=data.get("type") or "Unknown",
+                rarity=data.get("rarity") or "Unknown",
+                attunement_required=_coerce_bool(data.get("attunement_required"), False),
+                attunement_criteria=data.get("attunement_criteria"),
+                description=data.get("description"),
+                image_url=data.get("image_url"),
+                value=value_int,
+                # direct user edit → treat as override when a value is present
+                value_updated=bool(value_int is not None),
+            )
+            s.add(e)
+            s.flush()
+            return e
+
+    def update_from_details(self, entry_id: int, data: Dict[str, Any]) -> Entry:
+        """
+        Update an existing Entry from GUI Details data.
+        Allows clearing string fields and value.
+        """
+        # Trim string fields
+        for k in ("name", "type", "rarity", "attunement_criteria", "description", "image_url"):
+            if k in data and isinstance(data[k], str):
+                data[k] = _trim(data[k])
+
+        value = data.get("value")
+        if value in ("", None):
+            value_int = None
+        else:
+            value_int = int(value)
+
+        with session_scope(self._session_factory) as s:
+            e = s.get(Entry, entry_id)
+            if not e:
+                raise ValueError(f"Entry {entry_id} not found")
+
+            # Overwrite fields explicitly from the form
+            e.name = data.get("name") or "Unknown"
+            e.type = data.get("type") or "Unknown"
+            e.rarity = data.get("rarity") or "Unknown"
+            e.attunement_required = _coerce_bool(data.get("attunement_required"), False)
+            e.attunement_criteria = data.get("attunement_criteria")
+            e.description = data.get("description")
+            e.image_url = data.get("image_url")
+            e.value = value_int
+            e.value_updated = bool(value_int is not None)
+
+            s.flush()
+            return e
+
+
+
     # -- price updates ----------------------------------------------------------
 
     def update_price(self, entry_id: int, new_value: int) -> None:
@@ -626,7 +697,7 @@ class GeneratorRepository:
                 raise ValueError(f"Generator {generator.id} not found")
 
             db_obj.name = generator.name
-            db_obj.context = generator.context
+            db_obj.purpose = generator.purpose
             db_obj.description = generator.description
             db_obj.config_json = generator.config_json
 

@@ -93,6 +93,31 @@ class Backend:
         return to_card_dto(e) if e else None
 
     # ------------------------------------------------------------------ #
+    # Entry CRUD for Details tab                                         #
+    # ------------------------------------------------------------------ #
+
+    def create_entry(self, data: dict) -> CardDTO:
+        """
+        Create a brand-new entry from Details tab data.
+        """
+        e = self.entry_repo.create_from_details(data)
+        return to_card_dto(e)
+
+    def update_entry(self, entry_id: int, data: dict) -> CardDTO:
+        """
+        Update an existing entry with Details tab data.
+        """
+        e = self.entry_repo.update_from_details(entry_id, data)
+        return to_card_dto(e)
+
+    def delete_entry(self, entry_id: int) -> bool:
+        """
+        Delete an entry by id (used by Details tab).
+        """
+        return self.entry_repo.delete_by_id(entry_id)
+
+
+    # ------------------------------------------------------------------ #
     # Bulk operations for workers                                       #
     # ------------------------------------------------------------------ #
 

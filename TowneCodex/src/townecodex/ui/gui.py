@@ -269,7 +269,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(1200, 800)
+        self.resize(750, 500)
 
         self.admin = admin_ops
         self.backend = Backend()
@@ -281,6 +281,9 @@ class MainWindow(QMainWindow):
         self.current_generator_def = None
         self.current_generator_config = None
         self.current_bucket_config = None
+
+        self._current_entry_id: int | None = None
+        self._is_new_entry: bool = False
 
         self._build_menubar()
         self._build_toolbar()
@@ -412,15 +415,27 @@ class MainWindow(QMainWindow):
         self.txt_import_path = QLineEdit(placeholderText="Select CSV/XLSX file…")
         btn_browse = QPushButton("Browse…"); btn_browse.clicked.connect(self._browse_import)
         self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
+   
         btn_run_import = QPushButton("Run Import")
         btn_run_import.setProperty("variant", "primary")
         btn_run_import.clicked.connect(self._run_import)
+
+        self.chk_do_price = QCheckBox("Fill missing prices")
+        self.chk_do_scrape = QCheckBox("Scrape missing descriptions/images")
+
+        btn_run_maintenance = QPushButton("Run Maintenance")
+        btn_run_maintenance.setProperty("variant", "primary")
+        btn_run_maintenance.clicked.connect(self._run_maintenance)
 
 
         r = 0
         ig.addWidget(QLabel("File"), r, 0); ig.addWidget(self.txt_import_path, r, 1); ig.addWidget(btn_browse, r, 2); r += 1
         ig.addWidget(QLabel("Default image"), r, 0); ig.addWidget(self.txt_default_img, r, 1, 1, 2); r += 1
         ig.addWidget(btn_run_import, r, 0, 1, 3); r += 1
+        ig.addWidget(QLabel("Maintenance"), r, 0); r += 1
+        ig.addWidget(self.chk_do_price, r, 0, 1, 3); r += 1
+        ig.addWidget(self.chk_do_scrape, r, 0, 1, 3); r += 1
+        ig.addWidget(btn_run_maintenance, r, 0, 1, 3); r += 1
 
         left_layout.addWidget(self.import_box)
 
@@ -522,38 +537,68 @@ class MainWindow(QMainWindow):
         # Use an instance attribute so other methods can switch tabs
         self.tabs = QTabWidget()
 
-        # --- Item Details tab ---
+       # --- Item Details tab ---
         self.detail = QWidget()
         dl = QGridLayout(self.detail)
 
-        dl.addWidget(QLabel("Title"), 0, 0)
+        # ---- Entry toolbar (New / Save / Delete) ----
+        entry_toolbar_row = QHBoxLayout()
+        self.btn_entry_new = QPushButton("New Entry")
+        self.btn_entry_new.setProperty("variant", "bulbasaur")
+
+        self.btn_entry_save = QPushButton("Save Entry")
+        self.btn_entry_save.setProperty("variant", "royal")
+
+        self.btn_entry_delete = QPushButton("Delete Entry")
+        self.btn_entry_delete.setProperty("variant", "danger")
+
+        self.btn_entry_new.clicked.connect(self._new_entry_from_details)
+        self.btn_entry_save.clicked.connect(self._save_entry_from_details)
+        self.btn_entry_delete.clicked.connect(self._delete_entry_from_details)
+
+        self.btn_entry_delete.setEnabled(False)
+
+        entry_toolbar_row.addWidget(self.btn_entry_new)
+        entry_toolbar_row.addWidget(self.btn_entry_save)
+        entry_toolbar_row.addWidget(self.btn_entry_delete)
+        entry_toolbar_row.addStretch(1)
+
+        entry_toolbar_container = QWidget()
+        entry_toolbar_container.setLayout(entry_toolbar_row)
+
+        # put toolbar at the top of the Details tab
+        dl.addWidget(entry_toolbar_container, 0, 0, 1, 2)
+
+        # ---- Entry fields ----
+        dl.addWidget(QLabel("Title"), 1, 0)
         self.txt_title = QLineEdit()
-        dl.addWidget(self.txt_title, 0, 1)
+        dl.addWidget(self.txt_title, 1, 1)
 
-        dl.addWidget(QLabel("Type"), 1, 0)
+        dl.addWidget(QLabel("Type"), 2, 0)
         self.txt_type = QLineEdit()
-        dl.addWidget(self.txt_type, 1, 1)
+        dl.addWidget(self.txt_type, 2, 1)
 
-        dl.addWidget(QLabel("Rarity"), 2, 0)
+        dl.addWidget(QLabel("Rarity"), 3, 0)
         self.txt_rarity = QLineEdit()
-        dl.addWidget(self.txt_rarity, 2, 1)
+        dl.addWidget(self.txt_rarity, 3, 1)
 
-        dl.addWidget(QLabel("Attunement"), 3, 0)
+        dl.addWidget(QLabel("Attunement"), 4, 0)
         self.txt_attune = QLineEdit()
-        dl.addWidget(self.txt_attune, 3, 1)
+        dl.addWidget(self.txt_attune, 4, 1)
 
-        dl.addWidget(QLabel("Value"), 4, 0)
+        dl.addWidget(QLabel("Value"), 5, 0)
         self.txt_value = QLineEdit()
-        dl.addWidget(self.txt_value, 4, 1)
+        dl.addWidget(self.txt_value, 5, 1)
 
-        dl.addWidget(QLabel("Image URL"), 5, 0)
+        dl.addWidget(QLabel("Image URL"), 6, 0)
         self.txt_image = QLineEdit()
-        dl.addWidget(self.txt_image, 5, 1)
+        dl.addWidget(self.txt_image, 6, 1)
 
-        dl.addWidget(QLabel("Description (markdown)"), 6, 0, 1, 2)
+        dl.addWidget(QLabel("Description (markdown)"), 7, 0, 1, 2)
         self.txt_desc = QTextEdit()
         self.txt_desc.setPlaceholderText("Item description…")
-        dl.addWidget(self.txt_desc, 7, 0, 1, 2)
+        dl.addWidget(self.txt_desc, 8, 0, 1, 2)
+
 
         self.tabs.addTab(self.detail, "Details")
 
@@ -1321,8 +1366,8 @@ class MainWindow(QMainWindow):
 
         # Basic fields
         self.gen_name.setText(g.name or "")
-        # For now, map gen_purpose to GeneratorDef.context
-        self.gen_purpose.setText(g.context or "")
+        # For now, map gen_purpose to GeneratorDef.purpose
+        self.gen_purpose.setText(g.purpose or "")
 
         # Global bounds from GeneratorConfig
         self.gen_min_items.setText("" if cfg.min_items is None else str(cfg.min_items))
@@ -1398,6 +1443,184 @@ class MainWindow(QMainWindow):
         self.txt_image.clear()
         self.txt_desc.clear()
         self.preview.clear()
+
+    def _collect_entry_details_from_form(self) -> dict | None:
+        """
+        Read the Details tab and return a dict suitable for create/update.
+        Returns None if validation fails (and shows a message).
+        """
+        name = (self.txt_title.text() or "").strip()
+        type_text = (self.txt_type.text() or "").strip()
+        rarity = (self.txt_rarity.text() or "").strip()
+
+        if not name or not type_text or not rarity:
+            QMessageBox.warning(
+                self,
+                "Entry",
+                "Name, Type, and Rarity are required.",
+            )
+            return None
+
+        # Attunement line -> (required, criteria)
+        attune_line = (self.txt_attune.text() or "").strip()
+        att_required = False
+        att_criteria: str | None = None
+
+        if attune_line and attune_line.lower() != "none":
+            att_required = True
+            # Extract "(...)" if present
+            if "(" in attune_line and ")" in attune_line:
+                try:
+                    start = attune_line.index("(") + 1
+                    end = attune_line.index(")", start)
+                    inner = attune_line[start:end].strip()
+                    if inner:
+                        att_criteria = inner
+                except ValueError:
+                    # malformed, just ignore criteria
+                    pass
+
+        # Value
+        val_text = (self.txt_value.text() or "").strip()
+        value: int | None
+        if not val_text:
+            value = None
+        else:
+            try:
+                value = int(val_text)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Entry",
+                    "Value must be an integer (or left blank).",
+                )
+                return None
+
+        image_url = (self.txt_image.text() or "").strip() or None
+        desc = (self.txt_desc.toPlainText() or "").strip() or None
+
+        return {
+            "name": name,
+            "type": type_text,
+            "rarity": rarity,
+            "attunement_required": att_required,
+            "attunement_criteria": att_criteria,
+            "value": value,
+            "image_url": image_url,
+            "description": desc,
+        }
+
+    def _new_entry_from_details(self) -> None:
+        """
+        Clear the form and switch into 'new entry' mode.
+        """
+        self._clear_details()
+        self.list_view.clearSelection()
+
+        self._current_entry_id = None
+        self._is_new_entry = True
+
+        if hasattr(self, "btn_entry_delete"):
+            self.btn_entry_delete.setEnabled(False)
+
+        self.statusBar().showMessage("New entry (unsaved)…", 2000)
+        self._append_log("Entry: new entry mode.")
+
+    def _save_entry_from_details(self) -> None:
+        """
+        Save the current Details pane:
+        - create new entry if in 'new' mode
+        - update existing entry otherwise
+        """
+        data = self._collect_entry_details_from_form()
+        if data is None:
+            return  # validation already handled
+
+        try:
+            if self._is_new_entry or self._current_entry_id is None:
+                dto = self.backend.create_entry(data)
+                self._current_entry_id = dto.id
+                self._is_new_entry = False
+                if hasattr(self, "btn_entry_delete"):
+                    self.btn_entry_delete.setEnabled(True)
+                self._append_log(f"Entry: created {dto.id} / {dto.title!r}")
+                self.statusBar().showMessage("New entry created.", 3000)
+            else:
+                dto = self.backend.update_entry(self._current_entry_id, data)
+                self._append_log(f"Entry: updated {dto.id} / {dto.title!r}")
+                self.statusBar().showMessage("Entry updated.", 3000)
+        except Exception as exc:
+            QMessageBox.critical(self, "Entry", f"Failed to save entry:\n{exc}")
+            self._append_log(f"ENTRY SAVE ERROR: {exc}")
+            return
+
+        # Refresh the result list and reselect this entry if possible
+        try:
+            self._refresh()
+            if isinstance(self.list_model, QStandardItemModel):
+                for row in range(self.list_model.rowCount()):
+                    item = self.list_model.item(row)
+                    if item and item.data(Qt.UserRole) == self._current_entry_id:
+                        idx = self.list_model.indexFromItem(item)
+                        self.list_view.setCurrentIndex(idx)
+                        break
+        except Exception as exc:
+            self._append_log(f"Entry: refresh after save failed: {exc}")
+
+
+    def _delete_entry_from_details(self) -> None:
+        """
+        Delete the currently loaded entry, if any.
+        """
+        if self._current_entry_id is None:
+            QMessageBox.information(
+                self,
+                "Delete Entry",
+                "No entry is currently loaded.",
+            )
+            return
+
+        resp = QMessageBox.question(
+            self,
+            "Delete Entry",
+            "This will permanently delete the current entry.\n\nAre you sure?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        entry_id = self._current_entry_id
+        try:
+            ok = self.backend.delete_entry(entry_id)
+        except Exception as exc:
+            QMessageBox.critical(self, "Delete Entry", f"Delete failed:\n{exc}")
+            self._append_log(f"ENTRY DELETE ERROR: {exc}")
+            return
+
+        if not ok:
+            QMessageBox.warning(
+                self,
+                "Delete Entry",
+                "Entry not found or already deleted.",
+            )
+            return
+
+        self._append_log(f"Entry: deleted {entry_id}")
+        self.statusBar().showMessage("Entry deleted.", 3000)
+
+        self._clear_details()
+        self.list_view.clearSelection()
+        self._current_entry_id = None
+        self._is_new_entry = False
+        if hasattr(self, "btn_entry_delete"):
+            self.btn_entry_delete.setEnabled(False)
+
+        try:
+            self._refresh()
+        except Exception as exc:
+            self._append_log(f"Entry: refresh after delete failed: {exc}")
+
 
     def _clear_generator_details(self) -> None:
         """
@@ -1484,6 +1707,12 @@ class MainWindow(QMainWindow):
         self.txt_image.setText(detail.image_url)
         self.txt_desc.setPlainText(detail.description)
 
+        self._current_entry_id = entry_id
+        self._is_new_entry = False
+        if hasattr(self, "btn_entry_delete"):
+            self.btn_entry_delete.setEnabled(True)
+
+
     def _on_import_error(self, msg: str):
         self._append_log(f"ERROR: {msg}")
         QMessageBox.critical(self, "Import failed", msg)
@@ -1492,6 +1721,36 @@ class MainWindow(QMainWindow):
 
     def _prompt_import(self):
         self.mode_combo.setCurrentText("Import"); self._browse_import()
+
+    def _run_maintenance(self):
+        do_price = self.chk_do_price.isChecked()
+        do_scrape = self.chk_do_scrape.isChecked()
+
+        if not do_price and not do_scrape:
+            QMessageBox.information(self, "Maintenance", "Select at least one maintenance action.")
+            return
+
+        self._append_log("Maintenance: starting…")
+        self.statusBar().showMessage("Running maintenance…", 3000)
+
+        updated_price = 0
+        updated_scrape = 0
+
+        if do_price:
+            updated_price = self.backend.auto_price_missing()
+            self._append_log(f"Maintenance: filled price for {updated_price} item(s).")
+
+        if do_scrape:
+            updated_scrape = self.backend.scrape_existing_missing(throttle_seconds=1.0)
+            self._append_log(f"Maintenance: scraped {updated_scrape} item(s).")
+
+        self.statusBar().showMessage(
+            f"Maintenance complete — price entries updated:{updated_price} entrie scraped:{updated_scrape}",
+            5000,
+        )
+
+        self._refresh()
+
 
     def _on_row_changed(self, current, _previous):
         if not current or not current.isValid():
