@@ -56,4 +56,76 @@ def to_card_dtos(entries: Sequence) -> list[CardDTO]:
     return [to_card_dto(e) for e in entries]
 
 
-__all__ = ["CardDTO", "to_card_dto", "to_card_dtos"]
+# -------------------------------------------------------------------------------
+#                   Inventory
+#--------------------------------------------------------------------------------
+
+
+# --- InventoryItemDTO -------------------------------------------------------
+@dataclass(frozen=True)
+class InventoryItemDTO:
+    """
+    Snapshot of a single InventoryItem row, enriched for UI display.
+    """
+    id: int
+    entry_id: int
+    name: str
+    rarity: str
+    type: str
+    quantity: int
+    unit_value: Optional[int]
+    total_value: int
+
+def to_inventory_item_dto(ii) -> InventoryItemDTO:
+    e = ii.entry
+    return InventoryItemDTO(
+        id=int(ii.id),
+        entry_id=int(e.id),
+        name=e.name or "Unknown",
+        rarity=e.rarity or "Unknown",
+        type=e.type or "Unknown",
+        quantity=int(ii.quantity),
+        unit_value=ii.unit_value,
+        total_value=int(ii.total_value),
+    )
+
+
+# --- InventoryDTO ------------------------------------------------------------
+@dataclass(frozen=True)
+class InventoryDTO:
+    """
+    Snapshot of an Inventory and all of its items.
+    """
+    id: int
+    name: str
+    context: Optional[str]
+    budget: Optional[int]
+    created_at: str
+    total_value: int
+    items: list[InventoryItemDTO]
+
+
+def to_inventory_dto(inv) -> InventoryDTO:
+    items = [to_inventory_item_dto(ii) for ii in inv.items]
+
+    return InventoryDTO(
+        id=int(inv.id),
+        name=inv.name or "Unnamed Inventory",
+        context=inv.context,
+        budget=inv.budget,
+        created_at=inv.created_at.isoformat() if hasattr(inv, "created_at") else "",
+        total_value=sum(ii.total_value for ii in inv.items),
+        items=items,
+    )
+
+
+
+__all__ = [
+    "CardDTO", 
+    "to_card_dto", 
+    "to_card_dtos", 
+    "InventoryItemDTO", 
+    "to_inventory_item_dto",
+    "InventoryDTO", 
+    "to_inventory_dto"
+    ]
