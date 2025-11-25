@@ -641,6 +641,11 @@ class MainWindow(QMainWindow):
         self.btn_gen_delete = QPushButton("Delete Generator")
         self.btn_gen_delete.setProperty("variant", "danger")
 
+        self.btn_gen_new.clicked.connect(self._on_gen_new_clicked)
+        self.btn_gen_save.clicked.connect(self._on_gen_save_clicked)
+        self.btn_gen_delete.clicked.connect(self._on_gen_delete_clicked)
+
+
         generator_toolbar_row.addWidget(self.btn_gen_new)
         generator_toolbar_row.addWidget(self.btn_gen_save)
         generator_toolbar_row.addWidget(self.btn_gen_delete)
@@ -897,6 +902,261 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Filters cleared.", 1500)
         self._refresh()
 
+    # ------------------------------------------------------------------ #
+    # Generator CRUD                                                     #
+    # ------------------------------------------------------------------ #
+
+    def _on_gen_new_clicked(self) -> None:
+        """
+        Create a brand-new GeneratorDef from the current contents of
+        the Generator Details pane.
+
+        Does NOT clear the pane first; it simply treats the current
+        values as a new generator and saves them.
+        """
+        # Basic validation
+        name = (self.gen_name.text() or "").strip()
+        if not name:
+            QMessageBox.warning(self, "New Generator", "Name is required.")
+            return
+
+        purpose_text = (self.gen_purpose.text() or "").strip()
+        purpose = purpose_text or None
+
+        # Parse optional ints from QLineEdit
+        def parse_optional_int(widget: QLineEdit, label: str) -> int | None:
+            txt = (widget.text() or "").strip()
+            if not txt:
+                return None
+            try:
+                val = int(txt)
+            except ValueError:
+                QMessageBox.warning(self, "New Generator", f"{label} must be an integer.")
+                raise
+            if val < 0:
+                QMessageBox.warning(self, "New Generator", f"{label} cannot be negative.")
+                raise ValueError
+            return val
+
+        try:
+            min_items = parse_optional_int(self.gen_min_items, "Min Items")
+            max_items = parse_optional_int(self.gen_max_items, "Max Items")
+            budget = parse_optional_int(self.gen_budget, "Budget")
+        except Exception:
+            # parse_optional_int already showed a message
+            return
+
+        if min_items is not None and max_items is not None and max_items < min_items:
+            QMessageBox.warning(
+                self,
+                "New Generator",
+                "Max Items cannot be less than Min Items.",
+            )
+            return
+
+        # Ensure we have a config object
+        if self.current_generator_config is None:
+            self.current_generator_config = GeneratorConfig()
+        cfg = self.current_generator_config
+
+        # Push globals into config
+        cfg.min_items = min_items
+        cfg.max_items = max_items
+        cfg.max_total_value = budget
+
+        # Create a fresh generator in the DB
+        try:
+            gen = self.backend.create_generator(
+                name=name,
+                purpose=purpose,
+                config=cfg,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "New Generator",
+                f"Failed to create generator:\n{exc}",
+            )
+            self._append_log(f"GEN CREATE ERROR: {exc}")
+            self.statusBar().showMessage("Generator create failed.", 4000)
+            return
+
+        # Now this pane is "owned" by the new generator
+        self.current_generator_def = gen
+
+        # Refresh list and select the new one
+        self._load_generators()
+        if self.current_generator_def is not None:
+            target_id = int(self.current_generator_def.id)
+            for row in range(self.generator_model.rowCount()):
+                item = self.generator_model.item(row)
+                if item is None:
+                    continue
+                if item.data(Qt.UserRole) == target_id:
+                    self.generator_list.setCurrentIndex(item.index())
+                    break
+
+        self._append_log(f"Generator: created '{name}'.")
+        self.statusBar().showMessage("Generator created.", 3000)
+
+    def _on_gen_save_clicked(self) -> None:
+        """
+        Save changes to the currently loaded generator.
+
+        If there is no current_generator_def, complain and refuse to save.
+        """
+        if self.current_generator_def is None:
+            QMessageBox.warning(
+                self,
+                "Save Generator",
+                "No generator is loaded. Use 'New Generator' to create one.",
+            )
+            return
+
+        # Basic validation
+        name = (self.gen_name.text() or "").strip()
+        if not name:
+            QMessageBox.warning(self, "Save Generator", "Name is required.")
+            return
+
+        purpose_text = (self.gen_purpose.text() or "").strip()
+        purpose = purpose_text or None
+
+        # Parse optional ints from QLineEdit
+        def parse_optional_int(widget: QLineEdit, label: str) -> int | None:
+            txt = (widget.text() or "").strip()
+            if not txt:
+                return None
+            try:
+                val = int(txt)
+            except ValueError:
+                QMessageBox.warning(self, "Save Generator", f"{label} must be an integer.")
+                raise
+            if val < 0:
+                QMessageBox.warning(self, "Save Generator", f"{label} cannot be negative.")
+                raise ValueError
+            return val
+
+        try:
+            min_items = parse_optional_int(self.gen_min_items, "Min Items")
+            max_items = parse_optional_int(self.gen_max_items, "Max Items")
+            budget = parse_optional_int(self.gen_budget, "Budget")
+        except Exception:
+            # parse_optional_int already showed a message
+            return
+
+        if min_items is not None and max_items is not None and max_items < min_items:
+            QMessageBox.warning(
+                self,
+                "Save Generator",
+                "Max Items cannot be less than Min Items.",
+            )
+            return
+
+        # Ensure we have a config object
+        if self.current_generator_config is None:
+            self.current_generator_config = GeneratorConfig()
+        cfg = self.current_generator_config
+
+        # Push globals into config
+        cfg.min_items = min_items
+        cfg.max_items = max_items
+        cfg.max_total_value = budget
+
+        try:
+            gen = self.backend.update_generator(
+                gen_id=int(self.current_generator_def.id),
+                name=name,
+                purpose=purpose,
+                config=cfg,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Save Generator",
+                f"Failed to save generator:\n{exc}",
+            )
+            self._append_log(f"GEN SAVE ERROR: {exc}")
+            self.statusBar().showMessage("Generator save failed.", 4000)
+            return
+
+        self.current_generator_def = gen
+
+        # Refresh list and keep selection on this generator
+        self._load_generators()
+        if self.current_generator_def is not None:
+            target_id = int(self.current_generator_def.id)
+            for row in range(self.generator_model.rowCount()):
+                item = self.generator_model.item(row)
+                if item is None:
+                    continue
+                if item.data(Qt.UserRole) == target_id:
+                    self.generator_list.setCurrentIndex(item.index())
+                    break
+
+        self._append_log(f"Generator: updated '{name}'.")
+        self.statusBar().showMessage("Generator saved.", 3000)
+
+    def _on_gen_delete_clicked(self) -> None:
+        """
+        Delete the currently loaded generator from the DB,
+        with a confirmation dialog.
+        """
+        if self.current_generator_def is None:
+            QMessageBox.warning(self, "Delete Generator", "No generator selected.")
+            return
+
+        name = self.current_generator_def.name or f"#{self.current_generator_def.id}"
+        resp = QMessageBox.question(
+            self,
+            "Delete Generator",
+            f"Delete generator '{name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            self._append_log("Generator: delete cancelled by user.")
+            return
+
+        try:
+            ok = self.backend.delete_generator(int(self.current_generator_def.id))
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Delete Generator",
+                f"Failed to delete generator:\n{exc}",
+            )
+            self._append_log(f"GEN DELETE ERROR: {exc}")
+            self.statusBar().showMessage("Generator delete failed.", 4000)
+            return
+
+        if not ok:
+            QMessageBox.warning(
+                self,
+                "Delete Generator",
+                "Generator not found or could not be deleted.",
+            )
+            self._append_log("GEN DELETE WARN: backend returned False.")
+            return
+
+        # Clear UI and state
+        self.current_generator_def = None
+        # Keep current_generator_config as-is or reset, your call:
+        # here we reset to an empty config to avoid stale bucket state.
+        self.current_generator_config = GeneratorConfig()
+
+        self.gen_name.clear()
+        self.gen_purpose.clear()
+        self.gen_min_items.clear()
+        self.gen_max_items.clear()
+        self.gen_budget.clear()
+        self.bucket_table.setRowCount(0)
+
+        # Refresh generator list
+        self._load_generators()
+
+        self._append_log(f"Generator: deleted '{name}'.")
+        self.statusBar().showMessage("Generator deleted.", 3000)
 
     
 

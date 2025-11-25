@@ -17,6 +17,9 @@ from townecodex.importer import import_file as tc_import_file
 from townecodex.pricing import compute_price
 from townecodex.scraper import RedditScraper
 from townecodex.generation.generator_engine import run_generator_from_def
+from townecodex.models import GeneratorDef
+from townecodex.generation.schema import GeneratorConfig, BucketConfig, config_from_json, config_to_json
+
 
 
 @dataclass(frozen=True)
@@ -182,6 +185,30 @@ class Backend:
     # ------------------------------------------------------------------ #
     # Generators                                                         #
     # ------------------------------------------------------------------ #
+
+    def create_generator(self, name: str, purpose: str | None, config: GeneratorConfig) -> GeneratorDef:
+        gen = GeneratorDef(
+            name=name,
+            purpose=purpose,           
+            description=None,
+            config_json=config_to_json(config),
+        )
+        return self.gen_repo.insert(gen)
+
+    def update_generator(self, gen_id: int, name: str, purpose: str | None, config: GeneratorConfig) -> GeneratorDef:
+        gen = self.gen_repo.get_by_id(gen_id)
+        if not gen:
+            raise ValueError("Generator not found")
+
+        gen.name = name
+        gen.purpose = purpose            
+        gen.config_json = config_to_json(config)
+
+        return self.gen_repo.update(gen)
+
+    def delete_generator(self, gen_id: int) -> bool:
+        return self.gen_repo.delete_by_id(gen_id)
+
 
     def list_generators(self):
         return self.gen_repo.list_all()
