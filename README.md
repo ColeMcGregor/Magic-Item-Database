@@ -91,9 +91,6 @@ generation/
 generator_engine.py
 bucket_logic.py
 
-markdown
-Copy code
-
 ### UI Layer
 
 - PySide6 GUI components
@@ -164,12 +161,7 @@ Used to construct structured type catalogs for filtering and searching.
 ## 5. Usage
 
 1. Launch the GUI:
-
-python -m townecodex.ui.gui
-
-pgsql
-Copy code
-
+   python -m townecodex.ui.gui
 2. Initialize the database if needed.
 3. Browse and filter items from the sidebar.
 4. Select an item to view or edit its details.
@@ -198,6 +190,7 @@ pip install -r requirements.txt
 ### Database Initialization
 
 python -m townecodex.ui.cli init-db
+can also be done via GUI ADMIN controls
 
 ### Running the GUI
 
@@ -217,3 +210,16 @@ Recommended targets:
 
 Project is proprietary.
 Do not redistribute without permission.
+
+## 9. Images of Project
+
+Query 
+<img width="1418" height="965" alt="image" src="https://github.com/user-attachments/assets/c266c9cb-0df9-4a55-ac5d-36cc4d5903ef" />
+
+Generators
+<img width="1419" height="963" alt="image" src="https://github.com/user-attachments/assets/bef2cee6-9878-439b-bec7-cb52b0fa8460" />
+
+Import
+<img width="352" height="454" alt="image" src="https://github.com/user-attachments/assets/95d7c481-d18c-4ef7-a8fe-cd97c3223ded" />
+
+
