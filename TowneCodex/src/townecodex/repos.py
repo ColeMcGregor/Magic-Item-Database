@@ -13,7 +13,15 @@ import json
 
 from .pricing import compute_price
 from .db import SessionLocal
-from .models import Entry, GeneratorDef, GeneralType, SpecificType
+from .models import (
+    Entry,
+    GeneratorDef,
+    GeneralType,
+    SpecificType,
+    Inventory,
+    InventoryItem,
+)
+
 
 
 # --- Search filters ------------------------------------------------------------
@@ -712,3 +720,183 @@ class GeneratorRepository:
                 return False
             s.delete(obj)
         return True
+
+
+# --- Inventory Repository ------------------------------------------------------
+
+
+class InventoryRepository:
+    """
+    Data-access boundary for Inventory and InventoryItem objects.
+
+    This is explicit CRUD for inventories as used by the GUI:
+    - create_inventory: "Save As" for a new inventory, with items
+    - update_inventory: overwrite an existing inventory and its items
+    - delete_by_id: remove an inventory (items cascade via FK)
+    """
+
+    def __init__(self, session_factory=SessionLocal):
+        self._session_factory = session_factory
+
+    # -------- READ --------
+    def get_by_id(self, inv_id: int) -> Optional[Inventory]:
+        with session_scope(self._session_factory) as s:
+            return s.get(Inventory, inv_id)
+
+    def list_all(self) -> List[Inventory]:
+        """
+        Return all inventories, sorted by name then id.
+        """
+        with session_scope(self._session_factory) as s:
+            stmt = select(Inventory).order_by(Inventory.name.asc(), Inventory.id.asc())
+            return list(s.execute(stmt).scalars().all())
+
+    # -------- CREATE ("Save As") --------
+    def create_inventory(
+        self,
+        *,
+        name: str,
+        purpose: str | None,
+        budget: int | None,
+        items_spec: List[Dict[str, Any]] | None = None,
+    ) -> Inventory:
+        """
+        Create a new Inventory with the given basic fields and item rows.
+
+        items_spec is a list of dicts like:
+          {
+              "entry_id": int,
+              "quantity": int,
+              "unit_value": Optional[int or str],
+          }
+
+        This is intended to be driven directly from the Inventory details pane.
+        """
+        items_spec = items_spec or []
+
+        with session_scope(self._session_factory) as s:
+            inv = Inventory(
+                name=name or "Unnamed Inventory",
+                purpose=purpose,
+                budget=budget,
+            )
+            s.add(inv)
+            s.flush()  # ensure inv.id is populated
+
+            for spec in items_spec:
+                entry_id = spec.get("entry_id")
+                if entry_id is None:
+                    continue
+
+                entry = s.get(Entry, entry_id)
+                if not entry:
+                    raise ValueError(f"Entry {entry_id} not found for inventory creation")
+
+                qty_raw = spec.get("quantity", 1)
+                try:
+                    quantity = int(qty_raw)
+                except (TypeError, ValueError):
+                    quantity = 1
+                if quantity < 1:
+                    quantity = 1
+
+                uv_raw = spec.get("unit_value", None)
+                if uv_raw in ("", None):
+                    unit_value = None
+                else:
+                    try:
+                        unit_value = int(uv_raw)
+                    except (TypeError, ValueError):
+                        unit_value = None
+
+                item = InventoryItem(
+                    inventory_id=inv.id,
+                    entry_id=entry.id,
+                    quantity=quantity,
+                    unit_value=unit_value,
+                )
+                inv.items.append(item)
+
+            s.flush()
+            return inv
+
+    # -------- UPDATE ("Save") --------
+    def update_inventory(
+        self,
+        inv_id: int,
+        *,
+        name: str,
+        purpose: str | None,
+        budget: int | None,
+        items_spec: List[Dict[str, Any]] | None = None,
+    ) -> Inventory:
+        """
+        Update an existing Inventory and replace its items with the given spec.
+
+        This takes the "details pane is the source of truth" approach:
+        we overwrite name/purpose/budget and fully replace the item list.
+        """
+        items_spec = items_spec or []
+
+        with session_scope(self._session_factory) as s:
+            inv = s.get(Inventory, inv_id)
+            if not inv:
+                raise ValueError(f"Inventory {inv_id} not found")
+
+            inv.name = name or "Unnamed Inventory"
+            inv.purpose = purpose
+            inv.budget = budget
+
+            # Replace all items with the new specification
+            inv.items.clear()
+            s.flush()  # trigger delete-orphan cascades
+
+            for spec in items_spec:
+                entry_id = spec.get("entry_id")
+                if entry_id is None:
+                    continue
+
+                entry = s.get(Entry, entry_id)
+                if not entry:
+                    raise ValueError(f"Entry {entry_id} not found for inventory update")
+
+                qty_raw = spec.get("quantity", 1)
+                try:
+                    quantity = int(qty_raw)
+                except (TypeError, ValueError):
+                    quantity = 1
+                if quantity < 1:
+                    quantity = 1
+
+                uv_raw = spec.get("unit_value", None)
+                if uv_raw in ("", None):
+                    unit_value = None
+                else:
+                    try:
+                        unit_value = int(uv_raw)
+                    except (TypeError, ValueError):
+                        unit_value = None
+
+                item = InventoryItem(
+                    inventory_id=inv.id,
+                    entry_id=entry.id,
+                    quantity=quantity,
+                    unit_value=unit_value,
+                )
+                inv.items.append(item)
+
+            s.flush()
+            return inv
+
+    # -------- DELETE --------
+    def delete_by_id(self, inv_id: int) -> bool:
+        """
+        Delete an inventory and its items (via cascade). Return True if it existed.
+        """
+        with session_scope(self._session_factory) as s:
+            inv = s.get(Inventory, inv_id)
+            if not inv:
+                return False
+            s.delete(inv)
+            # commit handled by session_scope
+            return True
