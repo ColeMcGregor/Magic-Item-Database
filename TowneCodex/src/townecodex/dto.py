@@ -98,7 +98,7 @@ class InventoryDTO:
     """
     id: int
     name: str
-    context: Optional[str]
+    purpose: Optional[str]
     budget: Optional[int]
     created_at: str
     total_value: int
@@ -111,7 +111,7 @@ def to_inventory_dto(inv) -> InventoryDTO:
     return InventoryDTO(
         id=int(inv.id),
         name=inv.name or "Unnamed Inventory",
-        context=inv.context,
+        purpose=inv.purpose,
         budget=inv.budget,
         created_at=inv.created_at.isoformat() if hasattr(inv, "created_at") else "",
         total_value=sum(ii.total_value for ii in inv.items),
