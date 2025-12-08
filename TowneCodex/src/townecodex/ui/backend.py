@@ -11,8 +11,9 @@ from townecodex.repos import (
     EntryFilters,
     session_scope,
     GeneratorRepository,
+    InventoryRepository,
 )
-from townecodex.dto import CardDTO, to_card_dto
+from townecodex.dto import CardDTO, to_card_dto, InventoryDTO, to_inventory_dto, to_inventory_item_dto
 from townecodex.importer import import_file as tc_import_file
 from townecodex.pricing import compute_price
 from townecodex.scraper import RedditScraper
@@ -54,6 +55,8 @@ class Backend:
     def __init__(self):
         self.entry_repo = EntryRepository()
         self.gen_repo = GeneratorRepository()
+        self.inv_repo = InventoryRepository()  
+
 
     # ------------------------------------------------------------------ #
     # Listing & detail                                                   #
@@ -223,6 +226,58 @@ class Backend:
 
         entries = run_generator_from_def(self.entry_repo, gen_def)
         return [to_card_dto(e) for e in entries]
+
+
+
+    # ------------------------------------------------------------------ #
+    # Inventories                                                        #
+    # ------------------------------------------------------------------ #
+
+    def list_inventories(self) -> List[ListItem]:
+        invs = self.inv_repo.list_all()
+        return [ListItem(id=i.id, name=i.name or "") for i in invs]
+
+    def get_inventory(self, inv_id: int) -> Optional[InventoryDTO]:
+        inv = self.inv_repo.get_by_id(inv_id)
+        return to_inventory_dto(inv) if inv else None
+
+    def create_inventory(
+        self,
+        *,
+        name: str,
+        purpose: str | None,
+        budget: int | None,
+        items_spec: list[dict],
+    ) -> InventoryDTO:
+        inv = self.inv_repo.create_inventory(
+            name=name,
+            purpose=purpose, 
+            budget=budget,
+            items_spec=items_spec,
+        )
+        return to_inventory_dto(inv)
+
+    def update_inventory(
+        self,
+        inv_id: int,
+        *,
+        name: str,
+        purpose: str | None,
+        budget: int | None,
+        items_spec: list[dict],
+    ) -> InventoryDTO:
+        inv = self.inv_repo.update_inventory(
+            inv_id,
+            name=name,
+            purpose=purpose,
+            budget=budget,
+            items_spec=items_spec,
+        )
+        return to_inventory_dto(inv)
+
+    def delete_inventory(self, inv_id: int) -> bool:
+        return self.inv_repo.delete_by_id(inv_id)
+
 
     # ------------------------------------------------------------------ #
     # Import                                                             #
