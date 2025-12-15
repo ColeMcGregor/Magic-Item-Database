@@ -235,7 +235,8 @@ class Backend:
 
     def list_inventories(self) -> List[ListItem]:
         invs = self.inv_repo.list_all()
-        return [ListItem(id=i.id, name=i.name or "") for i in invs]
+        return [ListItem(id=int(i.id), name=i.name or "") for i in invs]
+
 
     def get_inventory(self, inv_id: int) -> Optional[InventoryDTO]:
         inv = self.inv_repo.get_by_id(inv_id)

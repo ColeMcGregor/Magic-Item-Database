@@ -6,7 +6,7 @@ from typing import Callable, Optional, Sequence, Iterable, Dict, Any, Tuple, Lis
 from contextlib import contextmanager
 
 from sqlalchemy import Null, select, update, func, delete
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import IntegrityError
 
 import json
@@ -740,8 +740,19 @@ class InventoryRepository:
 
     # -------- READ --------
     def get_by_id(self, inv_id: int) -> Optional[Inventory]:
+        """
+        Load a single inventory, with its items and their entries eager-loaded,
+        so it can be safely turned into an InventoryDTO.
+        """
         with session_scope(self._session_factory) as s:
-            return s.get(Inventory, inv_id)
+            stmt = (
+                select(Inventory)
+                .options(
+                    selectinload(Inventory.items).selectinload(InventoryItem.entry)
+                )
+                .where(Inventory.id == inv_id)
+            )
+            return s.execute(stmt).scalar_one_or_none()
 
     def list_all(self) -> List[Inventory]:
         """
@@ -900,3 +911,90 @@ class InventoryRepository:
             s.delete(inv)
             # commit handled by session_scope
             return True
+
+    # -------- APPEND ENTRIES --------
+    def add_entries_to_inventory(
+        self,
+        inv_id: int,
+        entry_ids: Sequence[int],
+        *,
+        default_quantity: int = 1,
+        use_entry_value_as_unit: bool = True,
+    ) -> Inventory:
+        """
+        Append one or more entries to an existing inventory.
+
+        For each entry_id:
+        - If an InventoryItem with that entry already exists, increment quantity.
+        - Otherwise, create a new InventoryItem with `default_quantity`.
+        - If `use_entry_value_as_unit` and unit_value is None, set unit_value from Entry.value.
+
+        Returns the updated Inventory.
+        """
+        if not entry_ids:
+            # nothing to do
+            inv = self.get_by_id(inv_id)
+            if not inv:
+                raise ValueError(f"Inventory {inv_id} not found")
+            return inv
+
+        with session_scope(self._session_factory) as s:
+            inv = (
+                s.query(Inventory)
+                .options(
+                    selectinload(Inventory.items).selectinload(InventoryItem.entry)
+                )
+                .get(inv_id)
+            )
+            if not inv:
+                raise ValueError(f"Inventory {inv_id} not found")
+
+            # Build a quick lookup: entry_id -> InventoryItem
+            existing_by_entry: dict[int, InventoryItem] = {
+                ii.entry_id: ii for ii in inv.items
+            }
+
+            for eid in entry_ids:
+                if eid is None:
+                    continue
+
+                # ensure Entry exists
+                entry = s.get(Entry, int(eid))
+                if not entry:
+                    raise ValueError(f"Entry {eid} not found while adding to inventory {inv_id}")
+
+                ii = existing_by_entry.get(entry.id)
+                if ii is None:
+                    # create new item
+                    qty = max(int(default_quantity), 1)
+                    unit_value = None
+                    if use_entry_value_as_unit and entry.value is not None:
+                        unit_value = int(entry.value)
+
+                    ii = InventoryItem(
+                        inventory_id=inv.id,
+                        entry_id=entry.id,
+                        quantity=qty,
+                        unit_value=unit_value,
+                    )
+                    inv.items.append(ii)
+                    existing_by_entry[entry.id] = ii
+                else:
+                    # increment existing quantity
+                    try:
+                        ii.quantity = int(ii.quantity) + int(default_quantity)
+                    except (TypeError, ValueError):
+                        ii.quantity = max(int(default_quantity), 1)
+
+            s.flush()
+
+            # Re-load with relationships populated for DTO building
+            stmt = (
+                select(Inventory)
+                .options(
+                    selectinload(Inventory.items).selectinload(InventoryItem.entry)
+                )
+                .where(Inventory.id == inv.id)
+            )
+            return s.execute(stmt).scalar_one()
+

@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from townecodex.renderers.html import HTMLCardRenderer
-from townecodex.dto import CardDTO
+from townecodex.dto import CardDTO, InventoryDTO, InventoryItemDTO
 from townecodex.db import init_db, engine
 from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
@@ -283,6 +283,8 @@ class MainWindow(QMainWindow):
         self.current_bucket_config = None
 
         self._current_entry_id: int | None = None
+        self.current_inventory_id: int | None = None
+
         self._is_new_entry: bool = False
 
         self._build_menubar()
@@ -388,7 +390,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.TopToolBarArea, tb)
         for a in (
             QAction("Refresh", self, triggered=self._refresh),
-            QAction("Run Generator", self, triggered=_noop),
+            QAction("Run Generator", self, triggered=_noop),  #TODO: not yet implemented
             QAction("Export Basket", self, triggered=self._export_basket),
         ):
             tb.addAction(a)
@@ -520,11 +522,19 @@ class MainWindow(QMainWindow):
 
         lb.addWidget(self.list_view)
 
-        # Button to push current selection into the basket
+        btn_row = QHBoxLayout()
+
         self.btn_add_to_basket = QPushButton("Add Selected to Basket")
         self.btn_add_to_basket.setProperty("variant", "primary")
         self.btn_add_to_basket.clicked.connect(self._add_selected_to_basket)
-        lb.addWidget(self.btn_add_to_basket)
+        btn_row.addWidget(self.btn_add_to_basket)
+
+        self.btn_add_to_inventory = QPushButton("Add Selected to Inventory")
+        self.btn_add_to_inventory.setProperty("variant", "primary")
+        self.btn_add_to_inventory.clicked.connect(self._add_selected_to_inventory)
+        btn_row.addWidget(self.btn_add_to_inventory)
+
+        lb.addLayout(btn_row)
 
         left_layout.addWidget(self.result_box, 1)
 
@@ -600,7 +610,7 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.txt_desc, 8, 0, 1, 2)
 
 
-        self.tabs.addTab(self.detail, "Details")
+        self.tabs.addTab(self.detail, "Entry Details")
 
         # --- Preview tab ---
         preview_tab = QWidget()
@@ -625,7 +635,146 @@ class MainWindow(QMainWindow):
         pl.addLayout(toolbar)
         pl.addWidget(self.preview)
 
-        self.tabs.addTab(preview_tab, "Preview")
+        self.tabs.addTab(preview_tab, "Entry Preview")
+
+        # --- Basket tab ---
+        self.basket_tab = QWidget()
+        bl = QVBoxLayout(self.basket_tab)
+
+        # Table: Name | Rarity | Type | Value | [Remove button] | [ add to inv ]
+        self.basket_table = QTableWidget(0, 6)
+        self.basket_table.setHorizontalHeaderLabels(
+            ["Name", "Rarity", "Type", "Value", "", ""]
+        )
+        self.basket_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.basket_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        self.basket_table.setColumnWidth(0, 240)   # Name
+        self.basket_table.setColumnWidth(1, 90)    # Rarity
+        self.basket_table.setColumnWidth(2, 160)   # Type
+        self.basket_table.setColumnWidth(3, 80)   # Value
+        self.basket_table.setColumnWidth(4, 74)   # Remove
+        self.basket_table.setColumnWidth(5, 100)  #push to inv
+
+        bl.addWidget(self.basket_table)
+
+        basket_buttons = QHBoxLayout()
+        self.btn_clear_basket = QPushButton("Clear Basket")
+        self.btn_clear_basket.setProperty("variant", "flat")
+        self.btn_clear_basket.clicked.connect(self._clear_basket)
+
+        self.btn_export_basket = QPushButton("Export Basket…")
+        self.btn_export_basket.setProperty("variant", "primary")
+        self.btn_export_basket.clicked.connect(self._export_basket)
+
+        self.btn_push_basket = QPushButton("Push Basket to Inventory")
+        self.btn_push_basket.setProperty("variant", "bulbasaur")
+
+        self.lbl_basket_total = QLabel("Total value: 0")
+        self.lbl_basket_total.setStyleSheet("font-weight: bold;")
+
+        basket_buttons.addWidget(self.btn_clear_basket)
+        basket_buttons.addWidget(self.btn_export_basket)
+        basket_buttons.addWidget(self.btn_push_basket)
+        basket_buttons.addStretch(1)
+        basket_buttons.addWidget(self.lbl_basket_total)
+
+        bl.addLayout(basket_buttons)
+
+        self.tabs.addTab(self.basket_tab, "Basket")
+
+        # -------------- Inventory and inventory items --------------------
+
+        self.inventory_tab = QWidget()
+        invLayout = QVBoxLayout(self.inventory_tab)
+        invLayout.setContentsMargins(8, 8, 8, 8)
+        invLayout.setSpacing(10)
+
+        # Toolbar
+        inv_toolbar_row = QHBoxLayout()
+        self.btn_inv_new = QPushButton("New Inventory")
+        self.btn_inv_new.setProperty("variant", "bulbasaur")
+        self.btn_inv_new.clicked.connect(self._on_inventory_new_clicked)
+
+        self.btn_inv_save = QPushButton("Save Inventory")
+        self.btn_inv_save.setProperty("variant", "royal")
+        self.btn_inv_save.clicked.connect(self._on_inventory_save_clicked)
+
+        self.btn_inv_delete = QPushButton("Delete Inventory")
+        self.btn_inv_delete.setProperty("variant", "danger")
+        self.btn_inv_delete.clicked.connect(self._on_inventory_delete_clicked)
+
+        inv_toolbar_row.addWidget(self.btn_inv_new)
+        inv_toolbar_row.addWidget(self.btn_inv_save)
+        inv_toolbar_row.addWidget(self.btn_inv_delete)
+        inv_toolbar_row.addStretch(1)
+
+        inv_toolbar_container = QWidget()
+        inv_toolbar_container.setLayout(inv_toolbar_row)
+        invLayout.addWidget(inv_toolbar_container)
+
+        # Inventory list
+        inv_list_box = QGroupBox("Inventories")
+        inv_list_layout = QVBoxLayout(inv_list_box)
+
+        self.inventory_list = QListView()
+        self.inventory_list_model = QStandardItemModel(self.inventory_list)
+        self.inventory_list.setModel(self.inventory_list_model)
+        self.inventory_list.setSelectionMode(QListView.SingleSelection)
+        self.inventory_list.clicked.connect(self._on_inventory_selected)
+
+        inv_list_layout.addWidget(self.inventory_list)
+        invLayout.addWidget(inv_list_box)
+
+        # Inventory details
+        inv_detail_box = QGroupBox("Inventory Details")
+        idl = QGridLayout(inv_detail_box)
+
+        idl.addWidget(QLabel("Name"), 0, 0)
+        self.inv_name = QLineEdit()
+        idl.addWidget(self.inv_name, 0, 1)
+
+        idl.addWidget(QLabel("Purpose"), 1, 0)
+        self.inv_purpose = QLineEdit()
+        idl.addWidget(self.inv_purpose, 1, 1)
+
+        idl.addWidget(QLabel("Budget (gp)"), 2, 0)
+        self.inv_budget = QLineEdit()
+        idl.addWidget(self.inv_budget, 2, 1)
+
+        idl.addWidget(QLabel("Created At"), 3, 0)
+        self.inv_created_at = QLabel("-")
+        idl.addWidget(self.inv_created_at, 3, 1)
+
+        invLayout.addWidget(inv_detail_box)
+
+        # Inventory items table
+        inv_items_box = QGroupBox("Items in Inventory")
+        iil = QVBoxLayout(inv_items_box)
+
+        self.inventory_items_table = QTableWidget(0, 6)
+        self.inventory_items_table.setHorizontalHeaderLabels(
+            ["Name", "Rarity", "Type", "Qty", "Unit Value", "Total Value"]
+        )
+        self.inventory_items_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.inventory_items_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        self.inventory_items_table.setColumnWidth(0, 260)   # Name
+        self.inventory_items_table.setColumnWidth(1, 90)    # Rarity
+        self.inventory_items_table.setColumnWidth(2, 140)   # Type
+        self.inventory_items_table.setColumnWidth(3, 60)    # Qty
+        self.inventory_items_table.setColumnWidth(4, 90)    # Unit
+        self.inventory_items_table.setColumnWidth(5, 100)   # Total
+
+        iil.addWidget(self.inventory_items_table)
+
+        invLayout.addWidget(inv_items_box)
+
+        self.tabs.addTab(self.inventory_tab, "Inventories")
+
+
+
+        # ----- Generator -------------------------------
 
         self.tab_generator_details = QWidget()
         gl = QGridLayout(self.tab_generator_details)
@@ -742,47 +891,6 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.tab_generator_details, "Generator Details")
 
-        # --- Basket tab ---
-        self.basket_tab = QWidget()
-        bl = QVBoxLayout(self.basket_tab)
-
-        # Table: Name | Rarity | Type | Value | [Remove button]
-        self.basket_table = QTableWidget(0, 5)
-        self.basket_table.setHorizontalHeaderLabels(
-            ["Name", "Rarity", "Type", "Value", ""]
-        )
-        self.basket_table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.basket_table.setEditTriggers(QTableWidget.NoEditTriggers)
-
-        self.basket_table.setColumnWidth(0, 320)   # Name
-        self.basket_table.setColumnWidth(1, 90)    # Rarity
-        self.basket_table.setColumnWidth(2, 160)   # Type
-        self.basket_table.setColumnWidth(3, 100)   # Value
-        self.basket_table.setColumnWidth(4, 100)   # Remove
-
-        bl.addWidget(self.basket_table)
-
-        basket_buttons = QHBoxLayout()
-        self.btn_clear_basket = QPushButton("Clear Basket")
-        self.btn_clear_basket.setProperty("variant", "flat")
-        self.btn_clear_basket.clicked.connect(self._clear_basket)
-
-        self.btn_export_basket = QPushButton("Export Basket…")
-        self.btn_export_basket.setProperty("variant", "primary")
-        self.btn_export_basket.clicked.connect(self._export_basket)
-
-        self.lbl_basket_total = QLabel("Total value: 0")
-        self.lbl_basket_total.setStyleSheet("font-weight: bold;")
-
-        basket_buttons.addWidget(self.btn_clear_basket)
-        basket_buttons.addWidget(self.btn_export_basket)
-        basket_buttons.addStretch(1)
-        basket_buttons.addWidget(self.lbl_basket_total)
-
-        bl.addLayout(basket_buttons)
-
-        self.tabs.addTab(self.basket_tab, "Basket")
-
         # --- Log tab ---
         self.log = QTextEdit()
         self.log.setReadOnly(True)
@@ -800,6 +908,8 @@ class MainWindow(QMainWindow):
         self.btn_open_browser.clicked.connect(self._open_selected_card)
 
         self._on_mode_changed(self.mode_combo.currentIndex())
+
+        self._refresh_inventory_list()
 
     # ---------- actions ----------
     def _refresh(self):
@@ -1158,7 +1268,383 @@ class MainWindow(QMainWindow):
         self._append_log(f"Generator: deleted '{name}'.")
         self.statusBar().showMessage("Generator deleted.", 3000)
 
-    
+    # ------------------------------------------------------------------ #
+    # Inventory UI helpers                                               #
+    # ------------------------------------------------------------------ #
+
+    def _clear_inventory_details(self) -> None:
+        """Clear all inventory fields and the item table."""
+        self.current_inventory_id = None
+        self.inv_name.clear()
+        self.inv_purpose.clear()
+        self.inv_budget.clear()
+        self.inv_created_at.setText("-")
+        self.inventory_items_table.setRowCount(0)
+
+    def _load_inventory_into_form(self, inv_dto) -> None:
+        """
+        Populate the inventory form and items table from an InventoryDTO.
+        """
+        self.current_inventory_id = inv_dto.id
+
+        # Top-level fields
+        self.inv_name.setText(inv_dto.name or "")
+        self.inv_purpose.setText(inv_dto.purpose or "")
+        self.inv_budget.setText("" if inv_dto.budget is None else str(inv_dto.budget))
+        self.inv_created_at.setText(inv_dto.created_at or "-")
+
+        # Items table
+        table = self.inventory_items_table
+        table.setRowCount(0)
+
+        for row, item in enumerate(inv_dto.items):
+            table.insertRow(row)
+
+            # Name column, stash entry_id in UserRole for later saving
+            name_item = QTableWidgetItem(item.name or "")
+            name_item.setData(Qt.UserRole, item.entry_id)
+            table.setItem(row, 0, name_item)
+
+            table.setItem(row, 1, QTableWidgetItem(item.rarity or ""))
+            table.setItem(row, 2, QTableWidgetItem(item.type or ""))
+            table.setItem(row, 3, QTableWidgetItem(str(item.quantity)))
+
+            unit_val_str = "" if item.unit_value is None else str(item.unit_value)
+            table.setItem(row, 4, QTableWidgetItem(unit_val_str))
+
+            table.setItem(row, 5, QTableWidgetItem(str(item.total_value)))
+
+    def _refresh_inventory_items(self, inv_id: int) -> None:
+        """
+        Reload a single inventory from the backend and push it into the form.
+        """
+        try:
+            inv = self.backend.get_inventory(inv_id)
+        except Exception as exc:
+            self._append_log(f"INVENTORY LOAD ERROR: {exc}")
+            QMessageBox.critical(self, "Inventories", f"Failed to load inventory:\n{exc}")
+            return
+
+        if inv is None:
+            self._append_log(f"Inventory: id={inv_id} not found.")
+            QMessageBox.warning(self, "Inventories", f"Inventory {inv_id} not found.")
+            self._clear_inventory_details()
+            return
+
+        self._load_inventory_into_form(inv)
+        self.statusBar().showMessage(f"Loaded inventory '{inv.name}'.", 3000)
+
+    # ----------------------- NEW / SAVE-AS ---------------------------- #
+
+    def _on_inventory_new_clicked(self) -> None:
+        """
+        Save-As behavior:
+        - Treat current UI state as a new inventory definition.
+        - Always INSERT; do not overwrite existing inventories.
+        """
+        try:
+            name = self.inv_name.text().strip()
+            if not name:
+                QMessageBox.warning(self, "Inventory", "Name is required to create an inventory.")
+                return
+
+            purpose = self.inv_purpose.text().strip() or None
+
+            budget_text = self.inv_budget.text().strip()
+            if budget_text:
+                try:
+                    budget = int(budget_text)
+                except ValueError:
+                    QMessageBox.warning(self, "Inventory", "Budget must be an integer (or empty).")
+                    return
+            else:
+                budget = None
+
+            items_spec = self._collect_items_spec_from_table()
+
+            inv = self.backend.create_inventory(
+                name=name,
+                purpose=purpose,
+                budget=budget,
+                items_spec=items_spec,
+            )
+
+        except Exception as exc:
+            QMessageBox.critical(self, "New Inventory", f"Failed to create inventory:\n{exc}")
+            self._append_log(f"ERROR during New Inventory: {exc}")
+            return
+
+        # Newly created inventory becomes the active one
+        self.current_inventory_id = inv.id
+        self._refresh_inventory_list(select_id=inv.id)
+        self._load_inventory_into_form(inv)
+
+        self._append_log(f"Inventory: created id={inv.id} name={inv.name!r}")
+        self.statusBar().showMessage("Inventory created.", 3000)
+
+    # ---------------------------- SAVE ------------------------------- #
+
+    def _on_inventory_save_clicked(self) -> None:
+        """
+        Save changes to the currently loaded inventory.
+        If no inventory is loaded, instruct the user to use New.
+        """
+        if self.current_inventory_id is None:
+            QMessageBox.warning(
+                self,
+                "Save Inventory",
+                "No inventory is loaded.\nUse 'New Inventory' to create one.",
+            )
+            return
+
+        try:
+            name = self.inv_name.text().strip()
+            if not name:
+                QMessageBox.warning(self, "Inventory", "Name is required.")
+                return
+
+            purpose = self.inv_purpose.text().strip() or None
+
+            budget_text = self.inv_budget.text().strip()
+            if budget_text:
+                try:
+                    budget = int(budget_text)
+                except ValueError:
+                    QMessageBox.warning(self, "Inventory", "Budget must be an integer (or empty).")
+                    return
+            else:
+                budget = None
+
+            items_spec = self._collect_items_spec_from_table()
+
+            inv = self.backend.update_inventory(
+                self.current_inventory_id,
+                name=name,
+                purpose=purpose,
+                budget=budget,
+                items_spec=items_spec,
+            )
+
+        except Exception as exc:
+            QMessageBox.critical(self, "Save Inventory", f"Failed to save inventory:\n{exc}")
+            self._append_log(f"ERROR during Save Inventory: {exc}")
+            return
+
+        self.current_inventory_id = inv.id
+        self._refresh_inventory_list(select_id=inv.id)
+        self._load_inventory_into_form(inv)
+
+        self._append_log(f"Inventory: saved id={inv.id} name={inv.name!r}")
+        self.statusBar().showMessage("Inventory saved.", 3000)
+
+    # --------------------------- DELETE ------------------------------ #
+
+    def _on_inventory_delete_clicked(self) -> None:
+        """Delete currently loaded inventory with confirmation."""
+        if self.current_inventory_id is None:
+            QMessageBox.information(self, "Inventory", "No inventory loaded to delete.")
+            return
+
+        inv_id = self.current_inventory_id
+        name = self.inv_name.text().strip() or "(unnamed)"
+
+        resp = QMessageBox.question(
+            self,
+            "Delete Inventory",
+            f"Are you sure you want to delete this inventory?\n\nID: {inv_id}\nName: {name}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        try:
+            ok = self.backend.delete_inventory(inv_id)
+        except Exception as exc:
+            QMessageBox.critical(self, "Delete Inventory", f"Failed to delete inventory:\n{exc}")
+            self._append_log(f"ERROR during Delete Inventory: {exc}")
+            return
+
+        if not ok:
+            QMessageBox.warning(
+                self,
+                "Delete Inventory",
+                "Inventory not found or could not be deleted.",
+            )
+            self._append_log(f"Inventory: delete returned False for id={inv_id}")
+            return
+
+        self._append_log(f"Inventory: deleted id={inv_id} name={name!r}")
+        self.statusBar().showMessage("Inventory deleted.", 3000)
+
+        self._clear_inventory_details()
+        self.current_inventory_id = None
+        self._refresh_inventory_list()
+
+    def _on_inventory_selected(self, index: QModelIndex) -> None:
+        """
+        When an inventory is selected from the list, load its details + items.
+        """
+        if not index.isValid():
+            return
+
+        inv_id = index.data(Qt.UserRole)
+        if inv_id is None:
+            return
+
+        inv_id = int(inv_id)
+        self._append_log(f"Inventory: selected inventory id={inv_id}")
+        self._refresh_inventory_items(inv_id)
+
+    def _refresh_inventory_list(self, select_id: int | None = None) -> None:
+        """
+        Populate the inventory list from the backend. Optionally select a given id.
+        """
+        self.inventory_list_model.clear()
+
+        try:
+            invs = self.backend.list_inventories()
+        except Exception as exc:
+            self._append_log(f"INVENTORY LIST ERROR: {exc}")
+            QMessageBox.critical(self, "Inventories", f"Failed to load inventories:\n{exc}")
+            return
+
+        selected_index = None
+
+        for inv in invs:
+            name = inv.name or f"Inventory {inv.id}"
+            item = QStandardItem(name)
+            item.setEditable(False)
+            item.setData(inv.id, Qt.UserRole)
+            self.inventory_list_model.appendRow(item)
+
+            if select_id is not None and inv.id == select_id:
+                selected_index = item.index()
+
+        if selected_index is not None:
+            self.inventory_list.setCurrentIndex(selected_index)
+
+        self._append_log(f"Inventory: loaded {len(invs)} inventory(ies).")
+
+    def _ensure_active_inventory(self) -> int:
+        """
+        Ensure there is a current inventory:
+        - If one is already loaded, return its id.
+        - If not, create a new empty inventory via Backend, select it, and return its id.
+        """
+        if getattr(self, "current_inventory_id", None) is not None:
+            return self.current_inventory_id
+
+        name = self.inv_name.text().strip() or "New Inventory"
+        purpose = self.inv_purpose.text().strip() or None
+
+        budget = None
+        budget_text = self.inv_budget.text().strip()
+        if budget_text:
+            try:
+                budget = int(budget_text)
+            except ValueError:
+                budget = None
+
+        inv = self.backend.create_inventory(
+            name=name,
+            purpose=purpose,
+            budget=budget,
+            items_spec=[],
+        )
+
+        self.current_inventory_id = inv.id
+        self._refresh_inventory_list(select_id=inv.id)
+        self._load_inventory_into_form(inv)
+        self.statusBar().showMessage(f"Created inventory '{inv.name}'.", 3000)
+        self._append_log(f"Inventory: auto-created id={inv.id} name={inv.name!r}")
+        return inv.id
+
+    def _add_selected_to_inventory(self) -> None:
+        indexes = self.list_view.selectedIndexes()
+        if not indexes:
+            self.statusBar().showMessage("No items selected.", 3000)
+            return
+
+        # Ensure we have an inventory record to attach to
+        _inv_id = self._ensure_active_inventory()
+
+        # Append rows to the inventory_items_table based on selected entries
+        for idx in indexes:
+            entry_id = idx.data(Qt.UserRole)
+            if entry_id is None:
+                continue
+
+            entry_id = int(entry_id)
+            dto = self.backend.get_item(entry_id)
+            if dto is None:
+                continue
+
+            row = self.inventory_items_table.rowCount()
+            self.inventory_items_table.insertRow(row)
+
+            name_item = QTableWidgetItem(dto.title or "")
+            name_item.setData(Qt.UserRole, dto.id)
+            self.inventory_items_table.setItem(row, 0, name_item)
+            self.inventory_items_table.setItem(row, 1, QTableWidgetItem(dto.rarity or ""))
+            self.inventory_items_table.setItem(row, 2, QTableWidgetItem(dto.type or ""))
+            self.inventory_items_table.setItem(row, 3, QTableWidgetItem("1"))
+
+            val_str = "" if dto.value is None else str(dto.value)
+            self.inventory_items_table.setItem(row, 4, QTableWidgetItem(val_str))
+            self.inventory_items_table.setItem(row, 5, QTableWidgetItem(val_str or "0"))
+
+        self.statusBar().showMessage("Selected item(s) added to inventory table. Click Save to persist.", 4000)
+        self._append_log("Inventory: added selected entries to current inventory table.")
+
+    def _collect_items_spec_from_table(self) -> list[dict]:
+        """
+        Produce items_spec compatible with InventoryRepository.
+        """
+        specs: list[dict] = []
+
+        rows = self.inventory_items_table.rowCount()
+        for row in range(rows):
+            name_item = self.inventory_items_table.item(row, 0)
+            if not name_item:
+                continue
+
+            entry_id = name_item.data(Qt.UserRole)
+            if entry_id is None:
+                continue  # cannot persist a row without an entry_id
+
+            # quantity
+            qty_item = self.inventory_items_table.item(row, 3)
+            qty = 1
+            if qty_item:
+                try:
+                    qty = max(1, int(qty_item.text()))
+                except ValueError:
+                    qty = 1
+
+            # unit value
+            unit_item = self.inventory_items_table.item(row, 4)
+            unit_value = None
+            if unit_item:
+                txt = unit_item.text().strip()
+                if txt:
+                    try:
+                        unit_value = int(txt)
+                    except ValueError:
+                        unit_value = None
+
+            specs.append({
+                "entry_id": entry_id,
+                "quantity": qty,
+                "unit_value": unit_value,
+            })
+
+        return specs
+
+
+
+
+#--------------------------GENERAL----------------------------------------    
 
     def _on_mode_changed(self, _idx: int):
         mode = self.mode_combo.currentIndex()
@@ -2141,10 +2627,17 @@ class MainWindow(QMainWindow):
             self.basket_table.setItem(row_idx, 3, QTableWidgetItem(val_str))
 
             # Remove button
-            btn = QPushButton("Remove")
-            btn.setProperty("variant", "flat")
-            btn.clicked.connect(self._remove_basket_row_for_button)
-            self.basket_table.setCellWidget(row_idx, 4, btn)
+            btnRemove = QPushButton("Remove")
+            btnRemove.setProperty("variant", "flat")
+            btnRemove.clicked.connect(self._remove_basket_row_for_button)
+            self.basket_table.setCellWidget(row_idx, 4, btnRemove)
+
+            # add to inventory button   
+            btnPush = QPushButton("Add to Inv")
+            btnPush.setProperty("variant", "flat")
+            #btnPush.clicked.connect(self.)
+            self.basket_table.setCellWidget(row_idx, 5, btnPush)
+
 
     def _remove_basket_row_for_button(self) -> None:
         """
