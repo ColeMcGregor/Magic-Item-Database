@@ -775,13 +775,11 @@ class InventoryRepository:
         Create a new Inventory with the given basic fields and item rows.
 
         items_spec is a list of dicts like:
-          {
-              "entry_id": int,
-              "quantity": int,
-              "unit_value": Optional[int or str],
-          }
-
-        This is intended to be driven directly from the Inventory details pane.
+        {
+            "entry_id": int,
+            "quantity": int,
+            "unit_value": Optional[int or str],
+        }
         """
         items_spec = items_spec or []
 
@@ -799,10 +797,11 @@ class InventoryRepository:
                 if entry_id is None:
                     continue
 
-                entry = s.get(Entry, entry_id)
+                entry = s.get(Entry, int(entry_id))
                 if not entry:
                     raise ValueError(f"Entry {entry_id} not found for inventory creation")
 
+                # quantity
                 qty_raw = spec.get("quantity", 1)
                 try:
                     quantity = int(qty_raw)
@@ -811,6 +810,7 @@ class InventoryRepository:
                 if quantity < 1:
                     quantity = 1
 
+                # unit value
                 uv_raw = spec.get("unit_value", None)
                 if uv_raw in ("", None):
                     unit_value = None
@@ -820,18 +820,26 @@ class InventoryRepository:
                     except (TypeError, ValueError):
                         unit_value = None
 
-                item = InventoryItem(
-                    inventory_id=inv.id,
-                    entry_id=entry.id,
-                    quantity=quantity,
-                    unit_value=unit_value,
+                inv.items.append(
+                    InventoryItem(
+                        inventory_id=inv.id,
+                        entry_id=entry.id,
+                        quantity=quantity,
+                        unit_value=unit_value,
+                    )
                 )
-                inv.items.append(item)
 
             s.flush()
-            return inv
 
-    # -------- UPDATE ("Save") --------
+            # IMPORTANT: return an eager-loaded instance (avoid detached lazy-load)
+            stmt = (
+                select(Inventory)
+                .options(selectinload(Inventory.items).selectinload(InventoryItem.entry))
+                .where(Inventory.id == inv.id)
+            )
+            return s.execute(stmt).scalar_one()
+
+
     def update_inventory(
         self,
         inv_id: int,
@@ -843,9 +851,6 @@ class InventoryRepository:
     ) -> Inventory:
         """
         Update an existing Inventory and replace its items with the given spec.
-
-        This takes the "details pane is the source of truth" approach:
-        we overwrite name/purpose/budget and fully replace the item list.
         """
         items_spec = items_spec or []
 
@@ -867,10 +872,11 @@ class InventoryRepository:
                 if entry_id is None:
                     continue
 
-                entry = s.get(Entry, entry_id)
+                entry = s.get(Entry, int(entry_id))
                 if not entry:
                     raise ValueError(f"Entry {entry_id} not found for inventory update")
 
+                # quantity
                 qty_raw = spec.get("quantity", 1)
                 try:
                     quantity = int(qty_raw)
@@ -879,6 +885,7 @@ class InventoryRepository:
                 if quantity < 1:
                     quantity = 1
 
+                # unit value
                 uv_raw = spec.get("unit_value", None)
                 if uv_raw in ("", None):
                     unit_value = None
@@ -888,16 +895,25 @@ class InventoryRepository:
                     except (TypeError, ValueError):
                         unit_value = None
 
-                item = InventoryItem(
-                    inventory_id=inv.id,
-                    entry_id=entry.id,
-                    quantity=quantity,
-                    unit_value=unit_value,
+                inv.items.append(
+                    InventoryItem(
+                        inventory_id=inv.id,
+                        entry_id=entry.id,
+                        quantity=quantity,
+                        unit_value=unit_value,
+                    )
                 )
-                inv.items.append(item)
 
             s.flush()
-            return inv
+
+            # IMPORTANT: return an eager-loaded instance (avoid detached lazy-load)
+            stmt = (
+                select(Inventory)
+                .options(selectinload(Inventory.items).selectinload(InventoryItem.entry))
+                .where(Inventory.id == inv.id)
+            )
+            return s.execute(stmt).scalar_one()
+
 
     # -------- DELETE --------
     def delete_by_id(self, inv_id: int) -> bool:
