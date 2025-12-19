@@ -669,6 +669,7 @@ class MainWindow(QMainWindow):
 
         self.btn_push_basket = QPushButton("Push Basket to Inventory")
         self.btn_push_basket.setProperty("variant", "bulbasaur")
+        self.btn_push_basket.clicked.connect(self._push_basket_to_inventory)
 
         self.lbl_basket_total = QLabel("Total value: 0")
         self.lbl_basket_total.setStyleSheet("font-weight: bold;")
@@ -2632,11 +2633,12 @@ class MainWindow(QMainWindow):
             btnRemove.clicked.connect(self._remove_basket_row_for_button)
             self.basket_table.setCellWidget(row_idx, 4, btnRemove)
 
-            # add to inventory button   
+           # add to inventory button
             btnPush = QPushButton("Add to Inv")
             btnPush.setProperty("variant", "flat")
-            #btnPush.clicked.connect(self.)
+            btnPush.clicked.connect(self._add_basket_entry_to_inventory)
             self.basket_table.setCellWidget(row_idx, 5, btnPush)
+
 
 
     def _remove_basket_row_for_button(self) -> None:
@@ -2723,6 +2725,152 @@ class MainWindow(QMainWindow):
         self.log.append(msg)
 
 
+    def _push_basket_to_inventory(self) -> None:
+        """
+        Push the in-memory basket into the currently loaded inventory.
+        If no inventory is loaded, create a new one (empty) and push into it.
+
+        Behavior:
+        - Merge by entry_id: if already present in inventory table, increment qty.
+        - Otherwise append a new row with qty=1 and unit_value from dto.value.
+        - Persist by calling the existing Save Inventory handler.
+        """
+        if not self.basket:
+            self.statusBar().showMessage("Basket is empty.", 2500)
+            return
+
+        # Ensure we have an inventory record (creates one if none loaded)
+        self._ensure_active_inventory()
+
+        # Build lookup: entry_id -> row index in inventory table
+        table = self.inventory_items_table
+        existing_rows: dict[int, int] = {}
+
+        for r in range(table.rowCount()):
+            name_item = table.item(r, 0)
+            if not name_item:
+                continue
+            eid = name_item.data(Qt.UserRole)
+            if eid is None:
+                continue
+            try:
+                existing_rows[int(eid)] = r
+            except (TypeError, ValueError):
+                continue
+
+        # Merge basket items into the table
+        for dto in self.basket:
+            try:
+                eid = int(dto.id)
+            except Exception:
+                continue
+
+            if eid in existing_rows:
+                r = existing_rows[eid]
+                qty_item = table.item(r, 3)
+                cur_qty = 1
+                if qty_item:
+                    try:
+                        cur_qty = int(qty_item.text())
+                    except ValueError:
+                        cur_qty = 1
+                new_qty = max(1, cur_qty + 1)
+                table.setItem(r, 3, QTableWidgetItem(str(new_qty)))
+
+                # Update total value cell (qty * unit)
+                unit_item = table.item(r, 4)
+                unit_val = 0
+                if unit_item:
+                    try:
+                        unit_val = int(unit_item.text().strip() or "0")
+                    except ValueError:
+                        unit_val = 0
+                table.setItem(r, 5, QTableWidgetItem(str(new_qty * unit_val)))
+            else:
+                # Append new row
+                row = table.rowCount()
+                table.insertRow(row)
+
+                name_item = QTableWidgetItem(dto.title or "")
+                name_item.setData(Qt.UserRole, eid)  # IMPORTANT: stash entry_id
+                table.setItem(row, 0, name_item)
+                table.setItem(row, 1, QTableWidgetItem(dto.rarity or ""))
+                table.setItem(row, 2, QTableWidgetItem(dto.type or ""))
+                table.setItem(row, 3, QTableWidgetItem("1"))
+
+                unit_val_str = "" if dto.value is None else str(dto.value)
+                table.setItem(row, 4, QTableWidgetItem(unit_val_str))
+
+                try:
+                    unit_val_int = int(dto.value) if dto.value is not None else 0
+                except (TypeError, ValueError):
+                    unit_val_int = 0
+                table.setItem(row, 5, QTableWidgetItem(str(unit_val_int)))
+
+                existing_rows[eid] = row
+
+        # Persist using your existing save flow (keeps repo semantics unchanged)
+        self._on_inventory_save_clicked()
+
+        self.statusBar().showMessage("Basket pushed into inventory.", 3000)
+        self._append_log("Basket: pushed into current inventory and saved.")
+
+    def _add_basket_entry_to_inventory(self) -> None:
+        """
+        Add the basket entry attached to this button to the inventory table.
+        Does NOT remove it from the basket.
+        """
+        btn = self.sender()
+        if btn is None:
+            return
+
+        # Find which row this button is in
+        for row in range(self.basket_table.rowCount()):
+            cell_widget = self.basket_table.cellWidget(row, 5)
+            if cell_widget is btn:
+                if not (0 <= row < len(self.basket)):
+                    return
+
+                dto = self.basket[row]
+
+                # Ensure an inventory exists
+                inv_id = self._ensure_active_inventory()
+
+                # Add to inventory table UI
+                table = self.inventory_items_table
+                insert_row = table.rowCount()
+                table.insertRow(insert_row)
+
+                # Name (stash entry_id)
+                name_item = QTableWidgetItem(dto.title or "")
+                name_item.setData(Qt.UserRole, dto.id)
+                table.setItem(insert_row, 0, name_item)
+
+                table.setItem(insert_row, 1, QTableWidgetItem(dto.rarity or ""))
+                table.setItem(insert_row, 2, QTableWidgetItem(dto.type or ""))
+                table.setItem(insert_row, 3, QTableWidgetItem("1"))  # quantity
+                table.setItem(
+                    insert_row,
+                    4,
+                    QTableWidgetItem("" if dto.value is None else str(dto.value)),
+                )
+                table.setItem(
+                    insert_row,
+                    5,
+                    QTableWidgetItem("" if dto.value is None else str(dto.value)),
+                )
+
+                self.statusBar().showMessage(
+                    f"Added '{dto.title}' to inventory.", 2000
+                )
+                self._append_log(
+                    f"Inventory: added entry {dto.id} / {dto.title!r} from basket"
+                )
+                return
+
+
+
+        
 def main() -> int:
     app = QApplication([])
 
