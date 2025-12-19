@@ -2240,6 +2240,7 @@ class MainWindow(QMainWindow):
                     self,
                     "Entry",
                     "Value must be an integer (or left blank).",
+                    #TODO add an allowance for "None to be there when making a save"
                 )
                 return None
 
