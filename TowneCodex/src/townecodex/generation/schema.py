@@ -45,7 +45,7 @@ class BucketConfig:
 
     # How many items this bucket should try to contribute
     min_count: int = 0
-    max_count: int = -1  # -1 can mean "no upper bound" if you want
+    max_count: int = 0  # 0 means "no upper bound" if you want
 
     # Rarity filter: if empty/None, do not filter by rarity
     allowed_rarities: Optional[List[str]] = None
