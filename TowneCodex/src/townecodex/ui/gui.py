@@ -2229,8 +2229,10 @@ class MainWindow(QMainWindow):
 
         # Value
         val_text = (self.txt_value.text() or "").strip()
+
         value: int | None
-        if not val_text:
+
+        if not val_text or val_text.lower() == "none":
             value = None
         else:
             try:
@@ -2239,11 +2241,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Entry",
-                    "Value must be an integer (or left blank).",
-                    #TODO add an allowance for "None to be there when making a save"
+                    'Value must be an integer, "None", or left blank.',
                 )
                 return None
-
+                
         image_url = (self.txt_image.text() or "").strip() or None
         desc = (self.txt_desc.toPlainText() or "").strip() or None
 
