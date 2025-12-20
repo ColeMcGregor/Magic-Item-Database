@@ -1,10 +1,11 @@
+# towne_codex/renderers/html.py
 from __future__ import annotations
 
 from typing import Iterable, Optional, Callable
 import html
 
 from ..dto import CardDTO
-from .base import CardRenderer
+from .base import CardRenderer, ExportLayout
 
 try:
     import markdown as _md  # optional dependency
@@ -50,17 +51,35 @@ def _render_description(
     return html.escape(md_text)
 
 
+def _chunk(cards: list[CardDTO], page_size: int) -> list[list[CardDTO]]:
+    """
+    Group cards into pages of `page_size`. The last page may contain fewer cards.
+    """
+    if page_size <= 0:
+        raise ValueError(f"page_size must be > 0 (got {page_size})")
+    pages: list[list[CardDTO]] = []
+    i = 0
+    n = len(cards)
+    while i < n:
+        pages.append(cards[i : i + page_size])
+        i += page_size
+    return pages
+
+
 # ---------------------------------------------------------------------------
 # HTMLCardRenderer
 # ---------------------------------------------------------------------------
 
 class HTMLCardRenderer(CardRenderer):
     """
-    Render one or more CardDTOs as a simple, printable HTML page
-    of item cards.
+    Render CardDTOs as a printable HTML page of item cards.
+
+    Card layout:
+      - Optional thumbnail floats left
+      - Text flows to the right until it passes the image height,
+        then continues full width underneath (classic float wrap).
     """
 
-    # *** this is what the registry in renderers/__init__.py needs ***
     name = "html"
 
     def __init__(
@@ -84,8 +103,10 @@ class HTMLCardRenderer(CardRenderer):
         )
 
         title = c.title or "Unknown Item"
-        img_html = (
-            f'<img src="{html.escape(c.image_url)}" '
+
+        # IMPORTANT: image first + floated via CSS => wrap behavior
+        thumb_html = (
+            f'<img class="thumb" src="{html.escape(c.image_url)}" '
             f'alt="{html.escape(title)} image">'
             if c.image_url
             else ""
@@ -93,14 +114,16 @@ class HTMLCardRenderer(CardRenderer):
 
         return f"""
 <article class="card" data-entry-id="{c.id}">
+  {thumb_html}
   <h2>{html.escape(title)}</h2>
+
   <div class="meta">
-    Rarity: {html.escape(c.rarity or "Unknown")}<br>
-    Attunement: {html.escape(att)}<br>
-    Value: {html.escape(price)}<br>
-    Type: {html.escape(c.type or "Unknown")}
+    <div><span class="k">Rarity</span><span class="v">{html.escape(c.rarity or "Unknown")}</span></div>
+    <div><span class="k">Attunement</span><span class="v">{html.escape(att)}</span></div>
+    <div><span class="k">Value</span><span class="v">{html.escape(price)}</span></div>
+    <div><span class="k">Type</span><span class="v">{html.escape(c.type or "Unknown")}</span></div>
   </div>
-  {img_html}
+
   <div class="description">{description_html}</div>
 </article>
 """.strip()
@@ -112,11 +135,27 @@ class HTMLCardRenderer(CardRenderer):
         cards: Iterable[CardDTO],
         *,
         page_title: str = "Towne Codex — Items",
+        layout: ExportLayout = ExportLayout.ONE_PER_PAGE,
     ) -> str:
-        cards_markup = (
-            "\n\n".join(self.render_card(c) for c in cards)
-            or '<div style="color:#fff7ee">No cards to display.</div>'
-        )
+        cards_list = list(cards)
+
+        match layout:
+            case ExportLayout.ONE_PER_PAGE:
+                pages_markup = self._render_pages_one_per_page(cards_list)
+            case ExportLayout.TWO_PER_PAGE_VERTICAL:
+                pages_markup = self._render_pages_n_per_page(
+                    cards_list,
+                    page_size=2,
+                    container_class="page-two-vertical",
+                )
+            case ExportLayout.TWO_PER_PAGE_HORIZONTAL:
+                pages_markup = self._render_pages_n_per_page(
+                    cards_list,
+                    page_size=2,
+                    container_class="page-two-horizontal",
+                )
+            case _:
+                raise ValueError(f"Unsupported export layout: {layout!r}")
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -132,6 +171,7 @@ class HTMLCardRenderer(CardRenderer):
     --muted:#555;
     --border:#d9c2a3;
   }}
+
   body {{
     margin:0;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
@@ -139,19 +179,46 @@ class HTMLCardRenderer(CardRenderer):
     color:var(--ink);
     line-height:1.45;
   }}
+
   header.page {{
     padding:1.5rem 2rem .5rem;
     color:#fff7ee;
     font-weight:600;
     font-size:1.4rem;
   }}
-  .wrap {{
-    padding:2rem;
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
-    gap:1.25rem;
-    align-items:start;
+
+  /* "Book" wrapper (screen) */
+  .book {{
+    padding: 2rem;
+    display: grid;
+    gap: 1.25rem;
+    align-items: start;
   }}
+
+  /* A "printed page" wrapper */
+  .print-page {{
+    background: transparent;
+  }}
+
+  /* Layout containers inside each page */
+  .page-one {{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }}
+
+  .page-two-vertical {{
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    gap: 1.25rem;
+  }}
+
+  .page-two-horizontal {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }}
+
   .card {{
     background:var(--card);
     border:1px solid var(--border);
@@ -159,35 +226,105 @@ class HTMLCardRenderer(CardRenderer):
     box-shadow:0 2px 6px rgba(0,0,0,.12);
     padding:1.25rem;
   }}
+
+  /* Clear floats so the card background wraps the thumbnail */
+  .card::after {{
+    content:"";
+    display:block;
+    clear:both;
+  }}
+
   .card h2 {{
-    margin:0 0 .25rem;
+    margin:0 0 .35rem;
     font-size:1.25rem;
   }}
+
+  /* Thumbnail: float-left = wrapped text that then becomes full width below */
+  .card .thumb {{
+    float:left;
+    width:140px;
+    height:140px;
+    object-fit:cover;
+    border-radius:10px;
+    border:1px solid var(--border);
+    margin:0 1rem .75rem 0;
+    display:block;
+    background:#fff;
+  }}
+
+  /* Layout-driven thumbnail sizes (optional, but makes 2-up layouts breathe) */
+  .page-one .card .thumb {{
+    width:22vw;
+    height:22vw;
+  }}
+  .page-two-vertical .card .thumb {{
+    width:18vw;
+    height:18vw;
+  }}
+  .page-two-horizontal .card .thumb {{
+    width:22vw;
+    height:22vw;
+  }}
+
   .meta {{
-    font-style:italic;
     color:var(--muted);
     margin-bottom:.75rem;
   }}
-  .card img {{
-    max-width:50%;
-    height:auto;
-    display:block;
-    border-radius:6px;
-    margin:.25rem 0 .75rem;
+  .meta .k {{
+    display:inline-block;
+    min-width: 95px;
+    font-style: italic;
   }}
+  .meta .v {{
+    font-weight: 600;
+    color: var(--ink);
+  }}
+
   .description p {{
     margin:.5rem 0;
   }}
+
   @media print {{
-    body {{ background:#fff; }}
-    .card {{ break-inside:avoid; box-shadow:none; }}
+    body {{
+      background:#fff;
+      margin: 0;
+    }}
+
+    header.page {{
+      color: #000;
+      padding: 0.25in 0.25in 0;
+      font-size: 14pt;
+    }}
+
+    .book {{
+      padding: 0.25in;
+      gap: 0.25in;
+    }}
+
+    .card {{
+      box-shadow:none;
+      break-inside: avoid;
+    }}
+
+    /* hard page breaks */
+    .print-page {{
+      break-after: page;
+      page-break-after: always;
+    }}
+
+    /* tighten gaps for print */
+    .page-one,
+    .page-two-vertical,
+    .page-two-horizontal {{
+      gap: 0.25in;
+    }}
   }}
 </style>
 </head>
 <body>
   <header class="page">{html.escape(page_title)}</header>
-  <main class="wrap">
-{cards_markup}
+  <main class="book">
+{pages_markup}
   </main>
 </body>
 </html>"""
@@ -198,7 +335,45 @@ class HTMLCardRenderer(CardRenderer):
         out_path: str,
         *,
         page_title: str = "Towne Codex — Items",
+        layout: ExportLayout = ExportLayout.ONE_PER_PAGE,
     ) -> None:
-        html_doc = self.render_page(cards, page_title=page_title)
+        html_doc = self.render_page(cards, page_title=page_title, layout=layout)
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(html_doc)
+
+    # ---- layout strategies --------------------------------------------
+
+    def _render_pages_one_per_page(self, cards: list[CardDTO]) -> str:
+        if not cards:
+            return '<div style="color:#fff7ee">No cards to display.</div>'
+        return "\n".join(
+            f"""<section class="print-page">
+  <div class="page-one">
+    {self.render_card(c)}
+  </div>
+</section>"""
+            for c in cards
+        )
+
+    def _render_pages_n_per_page(
+        self,
+        cards: list[CardDTO],
+        *,
+        page_size: int,
+        container_class: str,
+    ) -> str:
+        if not cards:
+            return '<div style="color:#fff7ee">No cards to display.</div>'
+
+        pages = _chunk(cards, page_size)
+        out: list[str] = []
+        for page_cards in pages:
+            inner = "\n".join(self.render_card(c) for c in page_cards)
+            out.append(
+                f"""<section class="print-page">
+  <div class="{container_class}">
+    {inner}
+  </div>
+</section>"""
+            )
+        return "\n".join(out)
