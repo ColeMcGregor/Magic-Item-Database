@@ -42,6 +42,7 @@ def _is_consumable(type_text: str | None) -> bool:
         or "potion" in t
         or "scroll" in t
         or "bolt" in t
+        or "arrow" in t
     )
 
 # (rarity, category, attune_required) → gp value
