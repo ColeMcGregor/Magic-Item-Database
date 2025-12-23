@@ -1658,6 +1658,7 @@ class MainWindow(QMainWindow):
         self.filter_box.setVisible(is_query)
         self.import_box.setVisible(is_import)
         self.generator_list_box.setVisible(is_generator)
+        self.result_box.setVisible(not is_generator)
 
         if is_generator:
             self.tabs.setCurrentWidget(self.tab_generator_details)
@@ -2714,7 +2715,7 @@ class MainWindow(QMainWindow):
         try:
             renderer = HTMLCardRenderer(enable_markdown=True)
             # renderer.write_page expects a list[CardDTO]
-            renderer.write_page(self.basket, path, page_title="Towne Codex — Basket")
+            renderer.write_page(self.basket, path, page_title="Your Items")
         except Exception as exc:
             self._append_log(f"EXPORT ERROR: {exc}")
             QMessageBox.critical(self, "Export failed", f"Failed to export basket:\n{exc}")
