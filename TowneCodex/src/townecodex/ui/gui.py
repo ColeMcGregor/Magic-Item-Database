@@ -409,8 +409,8 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(mode_box)
 
         self.list_view = QListView()
-        self.list_model = QStandardItemModel(self.list_view)
-        self.list_view.setModel(self.list_model)
+        # self.list_model = QStandardItemModel(self.list_view)
+        # self.list_view.setModel(self.list_model)
 
         # Import panel
         self.import_box = QGroupBox("Import"); ig = QGridLayout(self.import_box)
@@ -838,9 +838,6 @@ class MainWindow(QMainWindow):
         self.btn_bucket_edit = QPushButton("Edit Bucket")
         self.btn_bucket_edit.setProperty("variant", "royal")
 
-        self.btn_bucket_remove = QPushButton("Remove Selected")
-        self.btn_bucket_remove.setProperty("variant", "danger")
-
         self.btn_bucket_move_up = QPushButton("Move Up")
         self.btn_bucket_move_up.setProperty("variant", "flat")
 
@@ -849,7 +846,7 @@ class MainWindow(QMainWindow):
 
         bucket_toolbar_row.addWidget(self.btn_bucket_add)
         bucket_toolbar_row.addWidget(self.btn_bucket_edit)
-        bucket_toolbar_row.addWidget(self.btn_bucket_remove)
+
         bucket_toolbar_row.addWidget(self.btn_bucket_move_up)
         bucket_toolbar_row.addWidget(self.btn_bucket_move_down)
         bucket_toolbar_row.addStretch(1)
@@ -872,7 +869,7 @@ class MainWindow(QMainWindow):
         gl.addWidget(buckets_controls_container, 7, 1)
 
         # Bucket table: Name | Items | Price (per item)
-        self.bucket_table = QTableWidget(0, 3)
+        self.bucket_table = QTableWidget(0, 4)
         self.bucket_table.setHorizontalHeaderLabels(
             ["Name", "Items", "Price (per item)", ""]
         )
@@ -881,7 +878,6 @@ class MainWindow(QMainWindow):
         self.bucket_table.setEditTriggers(QTableWidget.NoEditTriggers)
 
         self.bucket_table.setColumnWidth(0, 420)   # Name
-        self.bucket_table.setRowHeight
         self.bucket_table.setColumnWidth(1, 90)    # Item count
         self.bucket_table.setColumnWidth(2, 200)   # Price per item
         self.bucket_table.setColumnWidth(3, 90)    # Remove
@@ -2454,8 +2450,8 @@ class MainWindow(QMainWindow):
         self.txt_attune.setText(att)
 
         self.txt_value.setText(str(detail.value) if detail.value != "" else "")
-        self.txt_image.setText(detail.image_url)
-        self.txt_desc.setPlainText(detail.description)
+        self.txt_image.setText(str(detail.image_url) if detail.image_url else "")
+        self.txt_desc.setPlainText(str(detail.description) if detail.description else "")
 
         self._current_entry_id = entry_id
         self._is_new_entry = False
@@ -2483,71 +2479,60 @@ class MainWindow(QMainWindow):
         self._append_log("Maintenance: starting…")
         self.statusBar().showMessage("Running maintenance…", 3000)
 
-        updated_price = 0
-        updated_scrape = 0
-
         if do_price:
-            updated_price = self.backend.auto_price_missing()
-            self._append_log(f"Maintenance: filled price for {updated_price} item(s).")
+            self._run_auto_price()
 
         if do_scrape:
-            updated_scrape = self.backend.scrape_existing_missing(throttle_seconds=1.0)
-            self._append_log(f"Maintenance: scraped {updated_scrape} item(s).")
-
-        self.statusBar().showMessage(
-            f"Maintenance complete — price entries updated:{updated_price} entrie scraped:{updated_scrape}",
-            5000,
-        )
-
-        self._refresh()
+            self._run_scrape_existing()
 
 
-    def _on_row_changed(self, current, _previous):
-        if not current or not current.isValid():
-            return
-        idx = current
-        entry_id = idx.data(Qt.UserRole)
-        if entry_id is None:
-            return
-        data = self.backend.get_item(int(entry_id))
-        if not data:
-            return
-        # fill the right-hand fields
-        self.txt_title.setText(data["name"])
-        self.txt_type.setText(data["type"])
-        self.txt_rarity.setText(data["rarity"])
-        attune = "Requires Attunement" if data["attunement_required"] else "None"
-        if data["attunement_criteria"]:
-            attune += f" ({data['attunement_criteria']})"
-        self.txt_attune.setText(attune)
-        self.txt_value.setText("" if data["value"] == "" else str(data["value"]))
-        self.txt_image.setText(data["image_url"])
-        self.txt_desc.setPlainText(data["description"])
 
-    def _on_query_done(self, items):
-        # items is list[ListItem]
-        if not isinstance(self.list_model, QStandardItemModel):
-            self.list_model = QStandardItemModel(self.list_view)
-            self.list_view.setModel(self.list_model)
+    # def _on_row_changed(self, current, _previous):
+    #     if not current or not current.isValid():
+    #         return
+    #     idx = current
+    #     entry_id = idx.data(Qt.UserRole)
+    #     if entry_id is None:
+    #         return
+    #     data = self.backend.get_item(int(entry_id))
+    #     if not data:
+    #         return
+    #     # fill the right-hand fields
+    #     self.txt_title.setText(data["name"])
+    #     self.txt_type.setText(data["type"])
+    #     self.txt_rarity.setText(data["rarity"])
+    #     attune = "Requires Attunement" if data["attunement_required"] else "None"
+    #     if data["attunement_criteria"]:
+    #         attune += f" ({data['attunement_criteria']})"
+    #     self.txt_attune.setText(attune)
+    #     self.txt_value.setText("" if data["value"] == "" else str(data["value"]))
+    #     self.txt_image.setText(data["image_url"])
+    #     self.txt_desc.setPlainText(data["description"])
 
-        if isinstance(self.list_model, QStandardItemModel):
-            self.list_model.clear()
-        for itm in items:
-            sitem = QStandardItem(itm.name)
-            sitem.setEditable(False)
-            # stash the id for later detail loading
-            sitem.setData(itm.id, Qt.UserRole)
-            if not isinstance(self.list_model, QStandardItemModel):
-                self.list_model = QStandardItemModel(self.list_view)
-                self.list_view.setModel(self.list_model)
-            self.list_model.appendRow(sitem)
-        self.statusBar().showMessage(f"Loaded {len(items)} items.", 2000)
-        self._append_log(f"Query: {len(items)} rows")
+    # def _on_query_done(self, items):
+    #     # items is list[ListItem]
+    #     if not isinstance(self.list_model, QStandardItemModel):
+    #         self.list_model = QStandardItemModel(self.list_view)
+    #         self.list_view.setModel(self.list_model)
 
-    def _on_query_error(self, msg: str):
-        self._append_log(f"QUERY ERROR: {msg}")
-        QMessageBox.critical(self, "Query failed", msg)
-        self.statusBar().showMessage("Query failed.", 3000)
+    #     if isinstance(self.list_model, QStandardItemModel):
+    #         self.list_model.clear()
+    #     for itm in items:
+    #         sitem = QStandardItem(itm.name)
+    #         sitem.setEditable(False)
+    #         # stash the id for later detail loading
+    #         sitem.setData(itm.id, Qt.UserRole)
+    #         if not isinstance(self.list_model, QStandardItemModel):
+    #             self.list_model = QStandardItemModel(self.list_view)
+    #             self.list_view.setModel(self.list_model)
+    #         self.list_model.appendRow(sitem)
+    #     self.statusBar().showMessage(f"Loaded {len(items)} items.", 2000)
+    #     self._append_log(f"Query: {len(items)} rows")
+
+    # def _on_query_error(self, msg: str):
+    #     self._append_log(f"QUERY ERROR: {msg}")
+    #     QMessageBox.critical(self, "Query failed", msg)
+    #     self.statusBar().showMessage("Query failed.", 3000)
 
     def _preview_selected_card(self):
         dto = self._build_dto_for_selected()
