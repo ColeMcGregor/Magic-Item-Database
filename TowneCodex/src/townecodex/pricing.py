@@ -93,7 +93,7 @@ def compute_price(
     category = "consumable" if _is_consumable(type_text) else "other"
     r = _normalize_rarity(rarity)
     if not r:
-        print(f"no rarity: {r}")
+        print(f"no rarity for {type_text}: {r}")
         return None
 
     # For consumables, attunement doesn't matter
