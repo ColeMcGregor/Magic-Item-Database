@@ -1,7 +1,7 @@
 # towne_codex/renderers/html.py
 from __future__ import annotations
 
-from typing import Iterable, Optional, Callable
+from typing import Iterable, Optional, Callable, Union
 import html
 
 from ..dto import CardDTO
@@ -21,10 +21,32 @@ def _attunement_text(required: bool, criteria: Optional[str]) -> str:
     return "No" if not required else f"Yes{(' - ' + criteria) if criteria else ''}"
 
 
-def _format_price(value: Optional[int], value_updated: bool) -> str:
+def _format_price(value: Optional[Union[int, str]], value_updated: bool) -> str:
     if value is None:
         return "N/A"
-    return f"*{value}" if not value_updated else f"{value}"
+
+    # Normalize to string and strip whitespace
+    raw = str(value).strip()
+
+    # Detect and strip leading asterisk if present
+    has_asterisk = raw.startswith("*")
+    if has_asterisk:
+        raw = raw[1:].strip()
+
+    # Convert to int (fail loudly if invalid)
+    try:
+        numeric = int(raw)
+    except ValueError:
+        return "N/A"
+
+    formatted = f"{numeric:,}"
+
+    # Apply asterisk rule:
+    # show "*" when value is set and value_updated is False
+    # if not value_updated:
+    #     return f"*{formatted}"
+
+    return formatted
 
 
 def _render_description(
@@ -118,10 +140,10 @@ class HTMLCardRenderer(CardRenderer):
   <h2>{html.escape(title)}</h2>
 
   <div class="meta">
-    <div><span class="k">Rarity</span><span class="v">{html.escape(c.rarity or "Unknown")}</span></div>
-    <div><span class="k">Attunement</span><span class="v">{html.escape(att)}</span></div>
-    <div><span class="k">Value</span><span class="v">{html.escape(price)}</span></div>
-    <div><span class="k">Type</span><span class="v">{html.escape(c.type or "Unknown")}</span></div>
+    <div><span class="k">Rarity: </span><span class="v">{html.escape(c.rarity or "Unknown")}</span></div>
+    <div><span class="k">Attunement: </span><span class="v">{html.escape(att)}</span></div>
+    <div><span class="k">Value: </span><span class="v">{html.escape(price)} gp</span></div>
+    <div><span class="k">Type: </span><span class="v">{html.escape(c.type or "Unknown")}</span></div>
   </div>
 
   <div class="description">{description_html}</div>
@@ -134,7 +156,7 @@ class HTMLCardRenderer(CardRenderer):
         self,
         cards: Iterable[CardDTO],
         *,
-        page_title: str = "Towne Codex — Items",
+        page_title: str = "Your Items",
         layout: ExportLayout = ExportLayout.ONE_PER_PAGE,
     ) -> str:
         cards_list = list(cards)
@@ -334,7 +356,7 @@ class HTMLCardRenderer(CardRenderer):
         cards: Iterable[CardDTO],
         out_path: str,
         *,
-        page_title: str = "Towne Codex — Items",
+        page_title: str = "Your Items",
         layout: ExportLayout = ExportLayout.ONE_PER_PAGE,
     ) -> None:
         html_doc = self.render_page(cards, page_title=page_title, layout=layout)
