@@ -5,6 +5,8 @@ from typing import Optional, Sequence, List
 from PySide6.QtCore import QObject, Signal, Slot, QRunnable
 
 from .backend import Backend, ListItem
+from townecodex.generation.schema import GeneratorConfig
+
 from townecodex.dto import CardDTO
 
 # -------------------------------------------------------------------------------------------------------------
@@ -303,24 +305,24 @@ class GenerateSignals(QObject):
 
 
 class GenerateWorker(QRunnable):
-    def __init__(self, backend: Backend, gen_def_id: int):
+    def __init__(self, backend: Backend, config: GeneratorConfig):
         super().__init__()
 
         self.backend = backend
-        self.gen_def_id = int(gen_def_id)
+        self.config = config
         self.signals = GenerateSignals()
 
     @Slot()
     def run(self):
         """
-        Run generator definition by id.
+        Run generator from an in-memory GeneratorConfig.
 
         Emits:
           - done(list[CardDTO]) on success
           - error(message) on failure
         """
         try:
-            cards: List[CardDTO] = self.backend.run_generator(self.gen_def_id)
+            cards: List[CardDTO] = self.backend.run_generator_from_config(self.config)
             self.signals.done.emit(cards)
         except Exception as e:
             self.signals.error.emit(str(e))
