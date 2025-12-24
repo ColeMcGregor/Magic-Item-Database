@@ -739,10 +739,6 @@ class MainWindow(QMainWindow):
         self.inv_purpose = QLineEdit()
         idl.addWidget(self.inv_purpose, 1, 1)
 
-        idl.addWidget(QLabel("Budget (gp)"), 2, 0)
-        self.inv_budget = QLineEdit()
-        idl.addWidget(self.inv_budget, 2, 1)
-
         idl.addWidget(QLabel("Created At"), 3, 0)
         self.inv_created_at = QLabel("-")
         idl.addWidget(self.inv_created_at, 3, 1)
@@ -791,14 +787,19 @@ class MainWindow(QMainWindow):
         self.btn_gen_delete = QPushButton("Delete Generator")
         self.btn_gen_delete.setProperty("variant", "danger")
 
+        self.btn_gen_clear = QPushButton("Clear Fields")
+        self.btn_gen_clear.setProperty("variant", "flat")
+
         self.btn_gen_new.clicked.connect(self._on_gen_new_clicked)
         self.btn_gen_save.clicked.connect(self._on_gen_save_clicked)
         self.btn_gen_delete.clicked.connect(self._on_gen_delete_clicked)
+        self.btn_gen_clear.clicked.connect(self._clear_generator_details)
 
 
         generator_toolbar_row.addWidget(self.btn_gen_new)
         generator_toolbar_row.addWidget(self.btn_gen_save)
         generator_toolbar_row.addWidget(self.btn_gen_delete)
+        generator_toolbar_row.addWidget(self.btn_gen_clear)
         generator_toolbar_row.addStretch(1)
 
         generator_toolbar_container = QWidget()
@@ -843,6 +844,10 @@ class MainWindow(QMainWindow):
 
         self.btn_bucket_move_down = QPushButton("Move Down")
         self.btn_bucket_move_down.setProperty("variant", "flat")
+
+        self.btn_bucket_move_up.clicked.connect(self._move_bucket_up)
+        self.btn_bucket_move_down.clicked.connect(self._move_bucket_down)
+        self.btn_bucket_edit.clicked.connect(self._on_bucket_edit_clicked)
 
         bucket_toolbar_row.addWidget(self.btn_bucket_add)
         bucket_toolbar_row.addWidget(self.btn_bucket_edit)
@@ -1265,6 +1270,8 @@ class MainWindow(QMainWindow):
         self._append_log(f"Generator: deleted '{name}'.")
         self.statusBar().showMessage("Generator deleted.", 3000)
 
+    
+
     # ------------------------------------------------------------------ #
     # Inventory UI helpers                                               #
     # ------------------------------------------------------------------ #
@@ -1274,7 +1281,6 @@ class MainWindow(QMainWindow):
         self.current_inventory_id = None
         self.inv_name.clear()
         self.inv_purpose.clear()
-        self.inv_budget.clear()
         self.inv_created_at.setText("-")
         self.inventory_items_table.setRowCount(0)
 
@@ -1287,7 +1293,6 @@ class MainWindow(QMainWindow):
         # Top-level fields
         self.inv_name.setText(inv_dto.name or "")
         self.inv_purpose.setText(inv_dto.purpose or "")
-        self.inv_budget.setText("" if inv_dto.budget is None else str(inv_dto.budget))
         self.inv_created_at.setText(inv_dto.created_at or "-")
 
         # Items table
@@ -1347,22 +1352,11 @@ class MainWindow(QMainWindow):
 
             purpose = self.inv_purpose.text().strip() or None
 
-            budget_text = self.inv_budget.text().strip()
-            if budget_text:
-                try:
-                    budget = int(budget_text)
-                except ValueError:
-                    QMessageBox.warning(self, "Inventory", "Budget must be an integer (or empty).")
-                    return
-            else:
-                budget = None
-
             items_spec = self._collect_items_spec_from_table()
 
             inv = self.backend.create_inventory(
                 name=name,
                 purpose=purpose,
-                budget=budget,
                 items_spec=items_spec,
             )
 
@@ -1402,15 +1396,6 @@ class MainWindow(QMainWindow):
 
             purpose = self.inv_purpose.text().strip() or None
 
-            budget_text = self.inv_budget.text().strip()
-            if budget_text:
-                try:
-                    budget = int(budget_text)
-                except ValueError:
-                    QMessageBox.warning(self, "Inventory", "Budget must be an integer (or empty).")
-                    return
-            else:
-                budget = None
 
             items_spec = self._collect_items_spec_from_table()
 
@@ -1418,7 +1403,6 @@ class MainWindow(QMainWindow):
                 self.current_inventory_id,
                 name=name,
                 purpose=purpose,
-                budget=budget,
                 items_spec=items_spec,
             )
 
@@ -1535,18 +1519,10 @@ class MainWindow(QMainWindow):
         name = self.inv_name.text().strip() or "New Inventory"
         purpose = self.inv_purpose.text().strip() or None
 
-        budget = None
-        budget_text = self.inv_budget.text().strip()
-        if budget_text:
-            try:
-                budget = int(budget_text)
-            except ValueError:
-                budget = None
 
         inv = self.backend.create_inventory(
             name=name,
             purpose=purpose,
-            budget=budget,
             items_spec=[],
         )
 
@@ -2050,6 +2026,130 @@ class MainWindow(QMainWindow):
         self.current_generator_config.buckets.append(bucket)
         self._append_log(f"Generator: added bucket {bucket.name!r}")
         self._refresh_bucket_table()
+
+
+    def _on_bucket_edit_clicked(self) -> None:
+        if not self.current_generator_config:
+            QMessageBox.information(self, "Edit Bucket", "No generator is loaded.")
+            return
+
+        buckets = list(self.current_generator_config.buckets or [])
+        if not buckets:
+            QMessageBox.information(self, "Edit Bucket", "There are no buckets to edit.")
+            return
+
+        row = self.bucket_table.currentRow()
+        if row is None or row < 0 or row >= len(buckets):
+            QMessageBox.information(self, "Edit Bucket", "Select a bucket row first.")
+            return
+
+        current_bucket = buckets[row]
+
+        dlg = BucketDialog(self, bucket=current_bucket)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        updated_bucket = dlg.result()
+        if updated_bucket is None:
+            QMessageBox.critical(self, "Edit Bucket", "Bucket dialog returned no data.")
+            return
+
+        buckets[row] = updated_bucket
+        self.current_generator_config.buckets = buckets
+
+        self._refresh_bucket_table()
+        self.bucket_table.setCurrentCell(row, 0)
+
+        # If you have a dirty flag, flip it here:
+        # self._set_generator_dirty(True)
+
+
+    def _selected_bucket_row(self) -> int:
+        """
+        Return the selected bucket row index in bucket_table, or -1 if none.
+        """
+        if not self.bucket_table:
+            return -1
+
+        # If user clicked inside a cell
+        row = self.bucket_table.currentRow()
+        if row is not None and row >= 0:
+            return row
+
+        # Fallback: selected items
+        items = self.bucket_table.selectedItems()
+        if items:
+            return items[0].row()
+
+        return -1
+
+
+    def _reselect_bucket_row(self, row: int) -> None:
+        """
+        Restore selection after table refresh.
+        """
+        row = max(0, min(row, self.bucket_table.rowCount() - 1))
+        if self.bucket_table.rowCount() <= 0:
+            return
+        self.bucket_table.setCurrentCell(row, 0)
+
+
+    def _move_bucket_up(self) -> None:
+        """
+        Move selected bucket up by one position in current_generator_config.buckets.
+        """
+        if not self.current_generator_config:
+            return
+
+        buckets = list(self.current_generator_config.buckets or [])
+        if len(buckets) <= 1:
+            return
+
+        row = self._selected_bucket_row()
+        if row <= 0:
+            return  # none selected or already at top
+
+        # swap
+        buckets[row - 1], buckets[row] = buckets[row], buckets[row - 1]
+
+        # write back (GeneratorConfig is likely a dataclass; safest is replace field)
+        self.current_generator_config.buckets = buckets  # if mutable
+        # If your GeneratorConfig is frozen/immutable, you must rebuild it instead.
+
+        self._refresh_bucket_table()
+        self._reselect_bucket_row(row - 1)
+
+        # Optional: mark dirty (only if you have this)
+        # self._set_generator_dirty(True)
+
+
+    def _move_bucket_down(self) -> None:
+        """
+        Move selected bucket down by one position in current_generator_config.buckets.
+        """
+        if not self.current_generator_config:
+            return
+
+        buckets = list(self.current_generator_config.buckets or [])
+        if len(buckets) <= 1:
+            return
+
+        row = self._selected_bucket_row()
+        if row < 0 or row >= len(buckets) - 1:
+            return  # none selected or already at bottom
+
+        # swap
+        buckets[row + 1], buckets[row] = buckets[row], buckets[row + 1]
+
+        self.current_generator_config.buckets = buckets  # if mutable
+        self._refresh_bucket_table()
+        self._reselect_bucket_row(row + 1)
+
+        # Optional: mark dirty
+        # self._set_generator_dirty(True)
+
+
+    
 
     def _load_generators(self) -> None:
         """

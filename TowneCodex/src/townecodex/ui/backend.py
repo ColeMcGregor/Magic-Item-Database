@@ -397,7 +397,6 @@ class Backend:
         *,
         name: str,
         purpose: str | None,
-        budget: int | None,
         items_spec: list[dict],
     ) -> InventoryDTO:
         """
@@ -406,7 +405,6 @@ class Backend:
         inv = self.inv_repo.create_inventory(
             name=name,
             purpose=purpose,
-            budget=budget,
             items_spec=items_spec,
         )
         return to_inventory_dto(inv)
@@ -417,7 +415,6 @@ class Backend:
         *,
         name: str,
         purpose: str | None,
-        budget: int | None,
         items_spec: list[dict],
     ) -> InventoryDTO:
         """
@@ -427,7 +424,6 @@ class Backend:
             inv_id,
             name=name,
             purpose=purpose,
-            budget=budget,
             items_spec=items_spec,
         )
         return to_inventory_dto(inv)

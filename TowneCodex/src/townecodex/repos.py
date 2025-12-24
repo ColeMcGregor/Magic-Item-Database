@@ -768,7 +768,6 @@ class InventoryRepository:
         *,
         name: str,
         purpose: str | None,
-        budget: int | None,
         items_spec: List[Dict[str, Any]] | None = None,
     ) -> Inventory:
         """
@@ -787,7 +786,6 @@ class InventoryRepository:
             inv = Inventory(
                 name=name or "Unnamed Inventory",
                 purpose=purpose,
-                budget=budget,
             )
             s.add(inv)
             s.flush()  # ensure inv.id is populated
@@ -846,7 +844,6 @@ class InventoryRepository:
         *,
         name: str,
         purpose: str | None,
-        budget: int | None,
         items_spec: List[Dict[str, Any]] | None = None,
     ) -> Inventory:
         """
@@ -861,7 +858,6 @@ class InventoryRepository:
 
             inv.name = name or "Unnamed Inventory"
             inv.purpose = purpose
-            inv.budget = budget
 
             # Replace all items with the new specification
             inv.items.clear()
