@@ -562,15 +562,20 @@ class MainWindow(QMainWindow):
         self.btn_entry_delete = QPushButton("Delete Entry")
         self.btn_entry_delete.setProperty("variant", "danger")
 
+        self.btn_entry_clear = QPushButton("Clear Fields")
+        self.btn_entry_clear.setProperty("variant", "flat")
+
         self.btn_entry_new.clicked.connect(self._new_entry_from_details)
         self.btn_entry_save.clicked.connect(self._save_entry_from_details)
         self.btn_entry_delete.clicked.connect(self._delete_entry_from_details)
+        self.btn_entry_clear.clicked.connect(self._clear_details)
 
         self.btn_entry_delete.setEnabled(False)
 
         entry_toolbar_row.addWidget(self.btn_entry_new)
         entry_toolbar_row.addWidget(self.btn_entry_save)
         entry_toolbar_row.addWidget(self.btn_entry_delete)
+        entry_toolbar_row.addWidget(self.btn_entry_clear)
         entry_toolbar_row.addStretch(1)
 
         entry_toolbar_container = QWidget()
@@ -705,9 +710,19 @@ class MainWindow(QMainWindow):
         self.btn_inv_delete.setProperty("variant", "danger")
         self.btn_inv_delete.clicked.connect(self._on_inventory_delete_clicked)
 
+        self.btn_load_inv_to_basket = QPushButton("Load Inv Items to Basket")
+        self.btn_load_inv_to_basket.setProperty("variant", "flat")
+        self.btn_load_inv_to_basket.clicked.connect(self._on_inv_load_to_basket_clicked)
+
+        self.btn_inv_clear = QPushButton("Clear Fields")
+        self.btn_inv_clear.setProperty("variant", "flat")
+        self.btn_inv_clear.clicked.connect(self._clear_inventory_details)
+
         inv_toolbar_row.addWidget(self.btn_inv_new)
         inv_toolbar_row.addWidget(self.btn_inv_save)
         inv_toolbar_row.addWidget(self.btn_inv_delete)
+        inv_toolbar_row.addWidget(self.btn_load_inv_to_basket)
+        inv_toolbar_row.addWidget(self.btn_inv_clear)
         inv_toolbar_row.addStretch(1)
 
         inv_toolbar_container = QWidget()
@@ -1271,6 +1286,20 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Generator deleted.", 3000)
 
     
+    def _clear_generator_details(self) -> None:
+        """
+        Clear the Generator Details tab and reset current generator state.
+        """
+        self.current_generator_def = None
+        self.current_generator_config = None
+
+        self.gen_name.clear()
+        self.gen_purpose.clear()
+        self.gen_min_items.clear()
+        self.gen_max_items.clear()
+        self.gen_budget.clear()
+
+        self.bucket_table.setRowCount(0)
 
     # ------------------------------------------------------------------ #
     # Inventory UI helpers                                               #
@@ -1570,6 +1599,53 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Selected item(s) added to inventory table. Click Save to persist.", 4000)
         self._append_log("Inventory: added selected entries to current inventory table.")
 
+
+    def _on_inv_load_to_basket_clicked(self) -> None:
+        rows = self.inventory_items_table.rowCount()
+        if rows <= 0:
+            QMessageBox.information(self, "Load Inv into Basket", "This inventory has no items.")
+            return
+
+        cards: list[CardDTO] = []
+
+        for row in range(rows):
+            name_item = self.inventory_items_table.item(row, 0)
+            if not name_item:
+                continue
+
+            entry_id = name_item.data(Qt.UserRole)
+            if entry_id is None:
+                continue
+
+            try:
+                entry_id = int(entry_id)
+            except (TypeError, ValueError):
+                continue
+
+            qty = 1
+            qty_item = self.inventory_items_table.item(row, 3)
+            if qty_item:
+                try:
+                    qty = max(1, int((qty_item.text() or "").strip()))
+                except ValueError:
+                    qty = 1
+
+            base = self.backend.get_item(entry_id)  # CardDTO
+            if base is None:
+                continue
+
+            cards.extend([base] * qty)
+
+        if not cards:
+            QMessageBox.information(self, "Load Inv into Basket", "No items could be loaded into the basket.")
+            return
+
+        self.basket.extend(cards)   # append-only, duplicates allowed
+        self._rebuild_basket_view()
+        self.statusBar().showMessage(f"Loaded {len(cards)} item(s) into basket.", 3000)
+
+
+
     def _collect_items_spec_from_table(self) -> list[dict]:
         """
         Produce items_spec compatible with InventoryRepository.
@@ -1613,7 +1689,7 @@ class MainWindow(QMainWindow):
             })
 
         return specs
-
+        
 
 
 
@@ -2467,21 +2543,6 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._append_log(f"Entry: refresh after delete failed: {exc}")
 
-
-    def _clear_generator_details(self) -> None:
-        """
-        Clear the Generator Details tab and reset current generator state.
-        """
-        self.current_generator_def = None
-        self.current_generator_config = None
-
-        self.gen_name.clear()
-        self.gen_purpose.clear()
-        self.gen_min_items.clear()
-        self.gen_max_items.clear()
-        self.gen_budget.clear()
-
-        self.bucket_table.setRowCount(0)
 
     def _format_attunement(self, card) -> str:
         if not card.attunement_required:
