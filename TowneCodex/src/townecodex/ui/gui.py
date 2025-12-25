@@ -629,6 +629,9 @@ class MainWindow(QMainWindow):
         self.btn_open_browser = QPushButton("Open in browser…")
         self.btn_open_browser.setProperty("variant", "primary")
 
+        self.btn_preview_selected.clicked.connect(self._preview_selected_card)
+        self.btn_open_browser.clicked.connect(self._open_selected_card)
+
         toolbar.addWidget(self.btn_preview_selected)
         toolbar.addWidget(self.btn_open_browser)
         toolbar.addStretch(1)
@@ -706,23 +709,38 @@ class MainWindow(QMainWindow):
         self.btn_inv_save.setProperty("variant", "royal")
         self.btn_inv_save.clicked.connect(self._on_inventory_save_clicked)
 
-        self.btn_inv_delete = QPushButton("Delete Inventory")
-        self.btn_inv_delete.setProperty("variant", "danger")
-        self.btn_inv_delete.clicked.connect(self._on_inventory_delete_clicked)
-
-        self.btn_load_inv_to_basket = QPushButton("Load Inv Items to Basket")
-        self.btn_load_inv_to_basket.setProperty("variant", "flat")
-        self.btn_load_inv_to_basket.clicked.connect(self._on_inv_load_to_basket_clicked)
-
         self.btn_inv_clear = QPushButton("Clear Fields")
         self.btn_inv_clear.setProperty("variant", "flat")
         self.btn_inv_clear.clicked.connect(self._clear_inventory_details)
 
+        self.btn_inv_delete = QPushButton("Delete Inventory")
+        self.btn_inv_delete.setProperty("variant", "danger")
+        self.btn_inv_delete.clicked.connect(self._on_inventory_delete_clicked)
+
+        self.btn_load_inv_to_basket = QPushButton("Load Inv → Basket")
+        self.btn_load_inv_to_basket.setProperty("variant", "royal")
+        self.btn_load_inv_to_basket.clicked.connect(self._on_inv_load_to_basket_clicked)
+
+        self.btn_inv_open_browser = QPushButton("Open in Browser")
+        self.btn_inv_open_browser.setProperty("variant", "flat")
+        self.btn_inv_open_browser.clicked.connect(self._on_inv_open_in_browser_clicked)
+
+        self.btn_inv_export = QPushButton("Export Inventory…")
+        self.btn_inv_export.setProperty("variant", "royal")
+        self.btn_inv_export.clicked.connect(self._on_inv_export_clicked)
+
+        
+
+        
+
         inv_toolbar_row.addWidget(self.btn_inv_new)
         inv_toolbar_row.addWidget(self.btn_inv_save)
-        inv_toolbar_row.addWidget(self.btn_inv_delete)
-        inv_toolbar_row.addWidget(self.btn_load_inv_to_basket)
         inv_toolbar_row.addWidget(self.btn_inv_clear)
+        inv_toolbar_row.addWidget(self.btn_inv_delete)
+        inv_toolbar_row.addSpacing(38)  # for separation between purpose
+        inv_toolbar_row.addWidget(self.btn_load_inv_to_basket)
+        inv_toolbar_row.addWidget(self.btn_inv_open_browser)
+        inv_toolbar_row.addWidget(self.btn_inv_export)
         inv_toolbar_row.addStretch(1)
 
         inv_toolbar_container = QWidget()
@@ -921,8 +939,7 @@ class MainWindow(QMainWindow):
         container = QWidget(); lay = QVBoxLayout(container); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(splitter)
         self.setCentralWidget(container)
 
-        self.btn_preview_selected.clicked.connect(self._preview_selected_card)
-        self.btn_open_browser.clicked.connect(self._open_selected_card)
+        
 
         self._on_mode_changed(self.mode_combo.currentIndex())
 
@@ -3016,6 +3033,123 @@ class MainWindow(QMainWindow):
                     f"Inventory: added entry {dto.id} / {dto.title!r} from basket"
                 )
                 return
+
+    def _inv_cards_to_entry_cards(self) -> list[CardDTO]:
+        """
+        Build one CardDTO per inventory row.
+        If Qty > 1, suffix title with ' (xN)'.
+        Source of truth: inventory_items_table (unsaved edits included).
+        """
+        rows = self.inventory_items_table.rowCount()
+        cards: list[CardDTO] = []
+
+        for row in range(rows):
+            name_item = self.inventory_items_table.item(row, 0)
+            if not name_item:
+                continue
+
+            entry_id = name_item.data(Qt.UserRole)
+            if entry_id is None:
+                continue
+
+            try:
+                entry_id = int(entry_id)
+            except (TypeError, ValueError):
+                continue
+
+            qty = 1
+            qty_item = self.inventory_items_table.item(row, 3)
+            if qty_item:
+                try:
+                    qty = max(1, int((qty_item.text() or "").strip()))
+                except ValueError:
+                    qty = 1
+
+            base = self.backend.get_item(entry_id)  # CardDTO
+            if base is None:
+                continue
+
+            title = base.title or ""
+            if qty > 1:
+                title = f"{title} (x{qty})" if title else f"(x{qty})"
+
+            cards.append(CardDTO(
+                id=base.id,
+                title=title,
+                type=base.type,
+                rarity=base.rarity,
+                attunement_required=base.attunement_required,
+                attunement_criteria=base.attunement_criteria,
+                value=base.value,
+                value_updated=base.value_updated,
+                description=base.description,
+                image_url=base.image_url,
+            ))
+
+        return cards
+
+    def _render_inventory_html(self, cards: list[CardDTO]) -> str:
+        inv_name = (self.inv_name.text() or "Inventory").strip() or "Inventory"
+        renderer = HTMLCardRenderer(enable_markdown=True)
+        return renderer.render_page(cards, page_title=f"Inventory: {inv_name}")
+
+    def _write_html_tempfile(self, html_page: str, *, prefix: str) -> str:
+        fd, path = tempfile.mkstemp(suffix=".html", prefix=prefix)
+        os.close(fd)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html_page)
+        return path
+
+    def _build_inventory_html_or_warn(self) -> str | None:
+        cards = self._inv_cards_to_entry_cards()
+        if not cards:
+            QMessageBox.information(self, "Inventory", "This inventory has no items.")
+            return None
+        return self._render_inventory_html(cards)
+
+
+    def _on_inv_export_clicked(self) -> None:
+        html_page = self._build_inventory_html_or_warn()
+        if html_page is None:
+            return
+
+        inv_name = (self.inv_name.text() or "inventory").strip() or "inventory"
+        safe_name = "".join(c if (c.isalnum() or c in " -_") else "_" for c in inv_name).strip()
+        default_name = f"{safe_name}.html"
+
+        out_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Inventory",
+            default_name,
+            "HTML Files (*.html);;All Files (*)",
+        )
+        if not out_path:
+            return
+        if not out_path.lower().endswith(".html"):
+            out_path += ".html"
+
+        try:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(html_page)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Inventory", f"Failed to export:\n{exc}")
+            return
+
+        self._append_log(f"Exported inventory → {out_path}")
+        self.statusBar().showMessage(f"Exported inventory to {out_path}", 4000)
+
+    def _on_inv_open_in_browser_clicked(self) -> None:
+        html_page = self._build_inventory_html_or_warn()
+        if html_page is None:
+            return
+
+        path = self._write_html_tempfile(html_page, prefix="townecodex_inventory_")
+        webbrowser.open_new_tab(path)
+
+
+
+
+            
 
 
 
