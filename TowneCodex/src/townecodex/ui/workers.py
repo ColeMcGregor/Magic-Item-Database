@@ -134,7 +134,7 @@ class QueryWorker(QRunnable):
         backend: Backend,
         *,
         name_contains: Optional[str],
-        type_equals: Optional[str],
+        type_contains: Optional[str],
         rarities: Optional[Sequence[str]],
         attunement_required: Optional[bool],
         page: int = 1,
@@ -146,7 +146,7 @@ class QueryWorker(QRunnable):
 
         # Search filters
         self.name_contains = name_contains
-        self.type_equals = type_equals
+        self.type_contains = type_contains
         self.rarities = rarities
         self.attunement_required = attunement_required
 
@@ -168,7 +168,7 @@ class QueryWorker(QRunnable):
         try:
             items: List[ListItem] = self.backend.list_items(
                 name_contains=self.name_contains,
-                type_equals=self.type_equals,
+                type_contains=self.type_contains,
                 rarities=self.rarities,
                 attunement_required=self.attunement_required,
                 page=self.page,

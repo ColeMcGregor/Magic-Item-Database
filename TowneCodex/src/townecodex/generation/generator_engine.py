@@ -130,7 +130,7 @@ def _generate_bucket(
     # ---- step 1: coarse DB query -------------------------------------
     filters = EntryFilters(
         name_contains=None,
-        type_equals=None,  # we do type substring filtering in Python
+        type_contains=None,  # we do type substring filtering in Python
         rarity_in=bucket.allowed_rarities,
         attunement_required=bucket.attunement_required,
         text=None,
