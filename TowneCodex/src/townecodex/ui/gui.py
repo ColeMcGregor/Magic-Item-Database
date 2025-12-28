@@ -57,36 +57,69 @@ class BucketDialog(QDialog):
 
         # -------- Name --------
         self.name_edit = QLineEdit()
+        self.name_edit.setToolTip(
+            "Bucket name (required).\n"
+            "Example: \"Low-tier Consumables\""
+        )
         form.addRow("Name", self.name_edit)
 
         # -------- Item count range --------
         self.min_count_edit = QLineEdit()
         self.min_count_edit.setPlaceholderText("0")
+        self.min_count_edit.setToolTip(
+            "Minimum number of items this bucket should contribute.\n"
+            "Example: 2"
+        )
         form.addRow("Min items", self.min_count_edit)
 
         self.max_count_edit = QLineEdit()
         self.max_count_edit.setPlaceholderText("leave blank for no max")
+        self.max_count_edit.setToolTip(
+            "Maximum number of items this bucket can contribute.\n"
+            "Leave blank for no maximum.\n"
+            "Example: 5"
+        )
         form.addRow("Max items", self.max_count_edit)
 
         # -------- Allowed rarities --------
         # User enters comma-separated list (e.g. "Common, Uncommon, Rare")
         self.rarities_edit = QLineEdit()
         self.rarities_edit.setPlaceholderText("Comma-separated (optional)")
+        self.rarities_edit.setToolTip(
+            "Optional rarity filter. Comma-separated.\n"
+            "Leave blank to allow any rarity.\n"
+            "Example: Common, Uncommon, Rare"
+        )
         form.addRow("Allowed rarities", self.rarities_edit)
 
         # -------- Type substring filters --------
         # Again comma-separated ("weapon, armor", etc.)
         self.type_contains_edit = QLineEdit()
         self.type_contains_edit.setPlaceholderText("Comma-separated substrings (optional)")
+        self.type_contains_edit.setToolTip(
+            "Optional type filter. Comma-separated substrings.\n"
+            "Matches if the item type text contains ANY of these substrings.\n"
+            "Examples: weapon, armor, potion, scroll"
+        )
         form.addRow("Type contains any", self.type_contains_edit)
 
         # -------- Price range --------
         self.min_value_edit = QLineEdit()
         self.min_value_edit.setPlaceholderText("leave blank for no minimum")
+        self.min_value_edit.setToolTip(
+            "Optional minimum price (gp).\n"
+            "Leave blank for no minimum.\n"
+            "Example: 50"
+        )
         form.addRow("Min price (gp)", self.min_value_edit)
 
         self.max_value_edit = QLineEdit()
         self.max_value_edit.setPlaceholderText("leave blank for no maximum")
+        self.max_value_edit.setToolTip(
+            "Optional maximum price (gp).\n"
+            "Leave blank for no maximum.\n"
+            "Example: 500"
+        )
         form.addRow("Max price (gp)", self.max_value_edit)
 
         # -------- Attunement (tri-state) --------
@@ -97,11 +130,21 @@ class BucketDialog(QDialog):
         self.attune_combo.addItem("Ignore")       # -> None
         self.attune_combo.addItem("Required")     # -> True
         self.attune_combo.addItem("Forbidden")    # -> False
+        self.attune_combo.setToolTip(
+            "Attunement filter:\n"
+            "• Ignore: include both attunement and non-attunement items\n"
+            "• Required: only items that require attunement\n"
+            "• Forbidden: only items that do NOT require attunement"
+        )
         form.addRow("Attunement", self.attune_combo)
 
         # -------- Prefer unique --------
         self.unique_check = QCheckBox("Prefer unique items")
         self.unique_check.setChecked(True)
+        self.unique_check.setToolTip(
+            "If enabled, generation will try to avoid repeating the same item.\n"
+            "Not a hard guarantee if options are limited."
+        )
         form.addRow(self.unique_check)
 
         # -------- Buttons --------
@@ -109,8 +152,18 @@ class BucketDialog(QDialog):
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
             parent=self,
         )
+        buttons.setToolTip("Save or cancel changes to this bucket.")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+
+        # Tooltips for the actual buttons inside the box (when available)
+        ok_btn = buttons.button(QDialogButtonBox.Ok)
+        if ok_btn is not None:
+            ok_btn.setToolTip("Save this bucket configuration.")
+        cancel_btn = buttons.button(QDialogButtonBox.Cancel)
+        if cancel_btn is not None:
+            cancel_btn.setToolTip("Cancel and discard changes.")
+
         form.addRow(buttons)
 
         if bucket is not None:
@@ -265,6 +318,7 @@ class BucketDialog(QDialog):
 
 
 
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -397,65 +451,147 @@ class MainWindow(QMainWindow):
 
     # ---------- Central ----------
     def _build_central(self):
-        splitter = QSplitter(Qt.Horizontal); splitter.setChildrenCollapsible(False); splitter.setHandleWidth(8); splitter.setOpaqueResize(True)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(8)
+        splitter.setOpaqueResize(True)
 
         # LEFT
-        left = QWidget(); left_layout = QVBoxLayout(left); left_layout.setContentsMargins(10, 8, 8, 8); left_layout.setSpacing(10)
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(10, 8, 8, 8)
+        left_layout.setSpacing(10)
 
-        mode_box = QGroupBox("Mode"); grid = QGridLayout(mode_box)
-        self.mode_combo = QComboBox(); self.mode_combo.addItems(["Query", "Generator", "Import"])
+        # ---------------- Mode ----------------
+        mode_box = QGroupBox("Mode")
+        grid = QGridLayout(mode_box)
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Query", "Generator", "Import"])
+        self.mode_combo.setToolTip(
+            "Switch between Query, Generator, and Import views.\n"
+            "This changes which panels are visible and what the left list represents."
+        )
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        grid.addWidget(QLabel("Mode:"), 0, 0); grid.addWidget(self.mode_combo, 0, 1)
+
+        grid.addWidget(QLabel("Mode:"), 0, 0)
+        grid.addWidget(self.mode_combo, 0, 1)
         left_layout.addWidget(mode_box)
 
+        # NOTE: This list_view is unused later (you re-create self.list_view in Results),
+        # keeping it unchanged to avoid logic changes.
         self.list_view = QListView()
-        # self.list_model = QStandardItemModel(self.list_view)
-        # self.list_view.setModel(self.list_model)
 
-        # Import panel
-        self.import_box = QGroupBox("Import"); ig = QGridLayout(self.import_box)
+        # ---------------- Import panel ----------------
+        self.import_box = QGroupBox("Import")
+        ig = QGridLayout(self.import_box)
+
         self.txt_import_path = QLineEdit(placeholderText="Select CSV/XLSX file…")
-        btn_browse = QPushButton("Browse…"); btn_browse.clicked.connect(self._browse_import)
+        self.txt_import_path.setToolTip(
+            "Path to the CSV/XLSX file to import.\n"
+            "Use Browse… to select a file."
+        )
+
+        btn_browse = QPushButton("Browse…")
+        btn_browse.setToolTip(
+            "Choose a CSV/XLSX file from disk and populate the File field."
+        )
+        btn_browse.clicked.connect(self._browse_import)
+
         self.txt_default_img = QLineEdit(placeholderText="Optional default image URL…")
-   
+        self.txt_default_img.setToolTip(
+            "Optional default image URL used when an imported item has no image.\n"
+            "Leave blank to keep images empty."
+        )
+
         btn_run_import = QPushButton("Run Import")
         btn_run_import.setProperty("variant", "primary")
+        btn_run_import.setToolTip(
+            "Run import using the selected file and options.\n"
+            "This will add/update entries in the database."
+        )
         btn_run_import.clicked.connect(self._run_import)
 
         self.chk_do_price = QCheckBox("Fill missing prices")
+        self.chk_do_price.setToolTip(
+            "If checked, attempt to fill missing price values during maintenance."
+        )
+
         self.chk_do_scrape = QCheckBox("Scrape missing descriptions/images")
+        self.chk_do_scrape.setToolTip(
+            "If checked, attempt to scrape missing descriptions and images after import.\n"
+            "This may take time."
+        )
 
         btn_run_maintenance = QPushButton("Run Maintenance")
         btn_run_maintenance.setProperty("variant", "primary")
+        btn_run_maintenance.setToolTip(
+            "Run maintenance tasks (price fill / scraping) based on the checked options."
+        )
         btn_run_maintenance.clicked.connect(self._run_maintenance)
 
-
         r = 0
-        ig.addWidget(QLabel("File"), r, 0); ig.addWidget(self.txt_import_path, r, 1); ig.addWidget(btn_browse, r, 2); r += 1
-        ig.addWidget(QLabel("Default image"), r, 0); ig.addWidget(self.txt_default_img, r, 1, 1, 2); r += 1
-        ig.addWidget(btn_run_import, r, 0, 1, 3); r += 1
-        ig.addWidget(QLabel("Maintenance"), r, 0); r += 1
-        ig.addWidget(self.chk_do_price, r, 0, 1, 3); r += 1
-        ig.addWidget(self.chk_do_scrape, r, 0, 1, 3); r += 1
-        ig.addWidget(btn_run_maintenance, r, 0, 1, 3); r += 1
+        ig.addWidget(QLabel("File"), r, 0)
+        ig.addWidget(self.txt_import_path, r, 1)
+        ig.addWidget(btn_browse, r, 2)
+        r += 1
+
+        ig.addWidget(QLabel("Default image"), r, 0)
+        ig.addWidget(self.txt_default_img, r, 1, 1, 2)
+        r += 1
+
+        ig.addWidget(btn_run_import, r, 0, 1, 3)
+        r += 1
+
+        ig.addWidget(QLabel("Maintenance"), r, 0)
+        r += 1
+
+        ig.addWidget(self.chk_do_price, r, 0, 1, 3)
+        r += 1
+
+        ig.addWidget(self.chk_do_scrape, r, 0, 1, 3)
+        r += 1
+
+        ig.addWidget(btn_run_maintenance, r, 0, 1, 3)
+        r += 1
 
         left_layout.addWidget(self.import_box)
 
-        # Filters
+        # ---------------- Filters ----------------
         self.filter_box = QGroupBox("Filters")
         f = QGridLayout(self.filter_box)
 
         self.txt_name = QLineEdit(placeholderText="name contains…")
+        self.txt_name.setToolTip("Filter results to items whose name contains this text.")
 
         # Structured type filters (populated dynamically)
         self.cmb_type = QComboBox()     # General type (Armor, Weapon, etc.)
+        self.cmb_type.setToolTip(
+            "Filter by general type (e.g., Armor, Weapon).\n"
+            "Subtype list updates based on this selection."
+        )
+
         self.cmb_subtype = QComboBox()  # Specific tag (Longsword, Heavy, etc.)
+        self.cmb_subtype.setToolTip(
+            "Filter by subtype/tag (e.g., Longsword).\n"
+            "Options depend on the selected Type."
+        )
 
         self.cmb_rarity = QComboBox()
-        self.cmb_rarity.addItems(["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"])
+        self.cmb_rarity.addItems(
+            ["Any", "Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Artifact"]
+        )
+        self.cmb_rarity.setToolTip(
+            "Filter by rarity.\n"
+            "“Any” disables rarity filtering."
+        )
 
         self.cmb_attune = QComboBox()
         self.cmb_attune.addItems(["Any", "Requires Attunement", "No Attunement"])
+        self.cmb_attune.setToolTip(
+            "Filter by attunement requirement.\n"
+            "“Any” disables attunement filtering."
+        )
 
         f.addWidget(QLabel("Name"), 0, 0)
         f.addWidget(self.txt_name, 0, 1)
@@ -473,12 +609,15 @@ class MainWindow(QMainWindow):
         f.addWidget(self.cmb_attune, 4, 1)
 
         btn_row = QHBoxLayout()
+
         btn_apply = QPushButton("Apply")
         btn_apply.setProperty("variant", "primary")
+        btn_apply.setToolTip("Apply filters and refresh the results list.")
         btn_apply.clicked.connect(self._refresh)
 
         btn_clear = QPushButton("Clear")
         btn_clear.setProperty("variant", "flat")
+        btn_clear.setToolTip("Clear all filter fields and refresh results.")
         btn_clear.clicked.connect(self._clear_filters)
 
         btn_row.addWidget(btn_apply)
@@ -492,12 +631,14 @@ class MainWindow(QMainWindow):
         # Populate type/subtype combos once at startup (will also be refreshed later)
         self._populate_type_filters(initial=True)
 
-
         # --- GENERATOR LIST PANEL ---
         self.generator_list_box = QGroupBox("Generators")
         gl = QVBoxLayout(self.generator_list_box)
 
         self.generator_list = QListView()
+        self.generator_list.setToolTip(
+            "Select a generator to load it into the Generator Details tab for viewing or editing."
+        )
         self.generator_model = QStandardItemModel(self.generator_list)
         self.generator_list.setModel(self.generator_model)
         self.generator_list.clicked.connect(self._on_generator_selected)
@@ -508,11 +649,15 @@ class MainWindow(QMainWindow):
         # Default: hide it until Generator mode is selected
         self.generator_list_box.hide()
 
-        # Results list (Query mode)
+        # ---------------- Results list (Query mode) ----------------
         self.result_box = QGroupBox("Results")
         lb = QVBoxLayout(self.result_box)
 
         self.list_view = QListView()
+        self.list_view.setToolTip(
+            "Query results.\n"
+            "Click an item to load it into the Entry Details / Preview tabs."
+        )
         self.list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.list_view.setAlternatingRowColors(True)
         self.list_view.clicked.connect(self._on_result_clicked)
@@ -526,16 +671,23 @@ class MainWindow(QMainWindow):
 
         self.btn_add_to_basket = QPushButton("Add Selected to Basket")
         self.btn_add_to_basket.setProperty("variant", "primary")
+        self.btn_add_to_basket.setToolTip(
+            "Add the selected result item(s) to the Basket.\n"
+            "This appends; duplicates are allowed."
+        )
         self.btn_add_to_basket.clicked.connect(self._add_selected_to_basket)
         btn_row.addWidget(self.btn_add_to_basket)
 
         self.btn_add_to_inventory = QPushButton("Add Selected to Inventory")
         self.btn_add_to_inventory.setProperty("variant", "primary")
+        self.btn_add_to_inventory.setToolTip(
+            "Add the selected result item(s) to the current Inventory items table.\n"
+            "This appends; duplicates are allowed."
+        )
         self.btn_add_to_inventory.clicked.connect(self._add_selected_to_inventory)
         btn_row.addWidget(self.btn_add_to_inventory)
 
         lb.addLayout(btn_row)
-
         left_layout.addWidget(self.result_box, 1)
 
         # RIGHT
@@ -546,24 +698,41 @@ class MainWindow(QMainWindow):
 
         # Use an instance attribute so other methods can switch tabs
         self.tabs = QTabWidget()
+        self.tabs.setToolTip("Main workspace tabs (Entry, Preview, Basket, Inventories, Generator, Log).")
 
-       # --- Item Details tab ---
+        # ---------------- Entry Details tab ----------------
         self.detail = QWidget()
         dl = QGridLayout(self.detail)
 
         # ---- Entry toolbar (New / Save / Delete) ----
         entry_toolbar_row = QHBoxLayout()
+
         self.btn_entry_new = QPushButton("New Entry")
         self.btn_entry_new.setProperty("variant", "bulbasaur")
+        self.btn_entry_new.setToolTip(
+            "Start a new entry (clears the detail fields and prepares for creating a new database item)."
+        )
 
         self.btn_entry_save = QPushButton("Save Entry")
         self.btn_entry_save.setProperty("variant", "royal")
+        self.btn_entry_save.setToolTip(
+            "Save the current entry.\n"
+            "Creates a new entry if none is loaded, otherwise updates the loaded entry."
+        )
 
         self.btn_entry_delete = QPushButton("Delete Entry")
         self.btn_entry_delete.setProperty("variant", "danger")
+        self.btn_entry_delete.setToolTip(
+            "Delete the currently loaded entry from the database.\n"
+            "This is destructive."
+        )
 
         self.btn_entry_clear = QPushButton("Clear Fields")
         self.btn_entry_clear.setProperty("variant", "flat")
+        self.btn_entry_clear.setToolTip(
+            "Clear the current fields in the UI only.\n"
+            "This does not delete anything from the database."
+        )
 
         self.btn_entry_new.clicked.connect(self._new_entry_from_details)
         self.btn_entry_save.clicked.connect(self._save_entry_from_details)
@@ -587,47 +756,61 @@ class MainWindow(QMainWindow):
         # ---- Entry fields ----
         dl.addWidget(QLabel("Title"), 1, 0)
         self.txt_title = QLineEdit()
+        self.txt_title.setToolTip("Item title/name. This is what appears on cards and lists.")
         dl.addWidget(self.txt_title, 1, 1)
 
         dl.addWidget(QLabel("Type"), 2, 0)
         self.txt_type = QLineEdit()
+        self.txt_type.setToolTip("Item type/category text (e.g., Weapon, Armor, Wondrous Item).")
         dl.addWidget(self.txt_type, 2, 1)
 
         dl.addWidget(QLabel("Rarity"), 3, 0)
         self.txt_rarity = QLineEdit()
+        self.txt_rarity.setToolTip("Rarity text (e.g., Common, Rare). Keep consistent for filtering.")
         dl.addWidget(self.txt_rarity, 3, 1)
 
         dl.addWidget(QLabel("Attunement"), 4, 0)
         self.txt_attune = QLineEdit()
+        self.txt_attune.setToolTip("Attunement requirement text. Use consistent phrasing for filtering.")
         dl.addWidget(self.txt_attune, 4, 1)
 
         dl.addWidget(QLabel("Value"), 5, 0)
         self.txt_value = QLineEdit()
+        self.txt_value.setToolTip("Gold value (integer). Leave blank for N/A.")
         dl.addWidget(self.txt_value, 5, 1)
 
         dl.addWidget(QLabel("Image URL"), 6, 0)
         self.txt_image = QLineEdit()
+        self.txt_image.setToolTip("Image URL used on rendered cards. Leave blank if none.")
         dl.addWidget(self.txt_image, 6, 1)
 
         dl.addWidget(QLabel("Description (markdown)"), 7, 0, 1, 2)
         self.txt_desc = QTextEdit()
+        self.txt_desc.setToolTip("Markdown description for the item. This is rendered into the card output.")
         self.txt_desc.setPlaceholderText("Item description…")
         dl.addWidget(self.txt_desc, 8, 0, 1, 2)
 
-
         self.tabs.addTab(self.detail, "Entry Details")
 
-        # --- Preview tab ---
+        # ---------------- Preview tab ----------------
         preview_tab = QWidget()
         pl = QVBoxLayout(preview_tab)
         pl.setContentsMargins(4, 4, 4, 4)
         pl.setSpacing(6)
 
         toolbar = QHBoxLayout()
+
         self.btn_preview_selected = QPushButton("Render from selected")
         self.btn_preview_selected.setProperty("variant", "royal")
+        self.btn_preview_selected.setToolTip(
+            "Render a preview using the currently selected item (from the results list)."
+        )
+
         self.btn_open_browser = QPushButton("Open in browser…")
         self.btn_open_browser.setProperty("variant", "primary")
+        self.btn_open_browser.setToolTip(
+            "Open the selected item’s rendered HTML in your browser."
+        )
 
         self.btn_preview_selected.clicked.connect(self._preview_selected_card)
         self.btn_open_browser.clicked.connect(self._open_selected_card)
@@ -637,6 +820,7 @@ class MainWindow(QMainWindow):
         toolbar.addStretch(1)
 
         self.preview = QTextEdit()
+        self.preview.setToolTip("HTML preview output appears here. Read-only.")
         self.preview.setReadOnly(True)
         self.preview.setPlaceholderText("Preview output (HTML) will appear here.")
 
@@ -645,41 +829,67 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(preview_tab, "Entry Preview")
 
-        # --- Basket tab ---
+        # ---------------- Basket tab ----------------
         self.basket_tab = QWidget()
         bl = QVBoxLayout(self.basket_tab)
 
         # Table: Name | Rarity | Type | Value | [Remove button] | [ add to inv ]
         self.basket_table = QTableWidget(0, 6)
-        self.basket_table.setHorizontalHeaderLabels(
-            ["Name", "Rarity", "Type", "Value", "", ""]
+        self.basket_table.setToolTip(
+            "Basket contents.\n"
+            "Use Remove to delete a row, or push items into Inventory."
         )
+        self.basket_table.setHorizontalHeaderLabels(["Name", "Rarity", "Type", "Value", "", ""])
         self.basket_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.basket_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        # Header tooltips (after labels are set)
+        for i, tip in enumerate([
+            "Item name.",
+            "Item rarity.",
+            "Item type/category.",
+            "Formatted item value.",
+            "Remove this row from the basket.",
+            "Push this row into the Inventory items table."
+        ]):
+            header_item = self.basket_table.horizontalHeaderItem(i)
+            if header_item is not None:
+                header_item.setToolTip(tip)
 
         self.basket_table.setColumnWidth(0, 240)   # Name
         self.basket_table.setColumnWidth(1, 90)    # Rarity
         self.basket_table.setColumnWidth(2, 160)   # Type
-        self.basket_table.setColumnWidth(3, 80)   # Value
-        self.basket_table.setColumnWidth(4, 74)   # Remove
-        self.basket_table.setColumnWidth(5, 100)  #push to inv
+        self.basket_table.setColumnWidth(3, 80)    # Value
+        self.basket_table.setColumnWidth(4, 74)    # Remove
+        self.basket_table.setColumnWidth(5, 100)   # push to inv
 
         bl.addWidget(self.basket_table)
 
         basket_buttons = QHBoxLayout()
+
         self.btn_clear_basket = QPushButton("Clear Basket")
         self.btn_clear_basket.setProperty("variant", "flat")
+        self.btn_clear_basket.setToolTip(
+            "Clear all items from the basket.\n"
+            "This does not delete entries from the database."
+        )
         self.btn_clear_basket.clicked.connect(self._clear_basket)
 
         self.btn_export_basket = QPushButton("Export Basket…")
         self.btn_export_basket.setProperty("variant", "primary")
+        self.btn_export_basket.setToolTip("Export the basket as rendered HTML cards.")
         self.btn_export_basket.clicked.connect(self._export_basket)
 
         self.btn_push_basket = QPushButton("Push Basket to Inventory")
         self.btn_push_basket.setProperty("variant", "bulbasaur")
+        self.btn_push_basket.setToolTip(
+            "Push all basket rows into the Inventory items table.\n"
+            "This appends; duplicates are allowed."
+        )
         self.btn_push_basket.clicked.connect(self._push_basket_to_inventory)
 
         self.lbl_basket_total = QLabel("Total value: 0")
+        self.lbl_basket_total.setToolTip("Sum of basket item values (as currently listed).")
         self.lbl_basket_total.setStyleSheet("font-weight: bold;")
 
         basket_buttons.addWidget(self.btn_clear_basket)
@@ -692,8 +902,7 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.basket_tab, "Basket")
 
-        # -------------- Inventory and inventory items --------------------
-
+        # ---------------- Inventories tab ----------------
         self.inventory_tab = QWidget()
         invLayout = QVBoxLayout(self.inventory_tab)
         invLayout.setContentsMargins(8, 8, 8, 8)
@@ -701,37 +910,62 @@ class MainWindow(QMainWindow):
 
         # Toolbar
         inv_toolbar_row = QHBoxLayout()
+
         self.btn_inv_new = QPushButton("New Inventory")
         self.btn_inv_new.setProperty("variant", "bulbasaur")
+        self.btn_inv_new.setToolTip(
+            "Create a new inventory (Save As).\n"
+            "Does not modify the currently loaded inventory until you save."
+        )
         self.btn_inv_new.clicked.connect(self._on_inventory_new_clicked)
 
         self.btn_inv_save = QPushButton("Save Inventory")
         self.btn_inv_save.setProperty("variant", "royal")
+        self.btn_inv_save.setToolTip(
+            "Save the current inventory details and items.\n"
+            "Updates the loaded inventory."
+        )
         self.btn_inv_save.clicked.connect(self._on_inventory_save_clicked)
 
         self.btn_inv_clear = QPushButton("Clear Fields")
         self.btn_inv_clear.setProperty("variant", "flat")
+        self.btn_inv_clear.setToolTip(
+            "Clear the inventory detail fields and items table in the UI only."
+        )
         self.btn_inv_clear.clicked.connect(self._clear_inventory_details)
 
         self.btn_inv_delete = QPushButton("Delete Inventory")
         self.btn_inv_delete.setProperty("variant", "danger")
+        self.btn_inv_delete.setToolTip(
+            "Delete the currently loaded inventory.\n"
+            "This is destructive."
+        )
         self.btn_inv_delete.clicked.connect(self._on_inventory_delete_clicked)
 
         self.btn_load_inv_to_basket = QPushButton("Load Inv → Basket")
         self.btn_load_inv_to_basket.setProperty("variant", "royal")
+        self.btn_load_inv_to_basket.setToolTip(
+            "Load inventory items into the Basket using the current Inventory items table\n"
+            "(unsaved edits included).\n"
+            "This appends; duplicates are allowed."
+        )
         self.btn_load_inv_to_basket.clicked.connect(self._on_inv_load_to_basket_clicked)
 
         self.btn_inv_open_browser = QPushButton("Open in Browser")
         self.btn_inv_open_browser.setProperty("variant", "flat")
+        self.btn_inv_open_browser.setToolTip(
+            "Render the current Inventory items table as HTML cards and open it in your browser.\n"
+            "Uses the current UI state."
+        )
         self.btn_inv_open_browser.clicked.connect(self._on_inv_open_in_browser_clicked)
 
         self.btn_inv_export = QPushButton("Export Inventory…")
         self.btn_inv_export.setProperty("variant", "royal")
+        self.btn_inv_export.setToolTip(
+            "Export the current Inventory items table as HTML cards to a file.\n"
+            "Uses the current UI state."
+        )
         self.btn_inv_export.clicked.connect(self._on_inv_export_clicked)
-
-        
-
-        
 
         inv_toolbar_row.addWidget(self.btn_inv_new)
         inv_toolbar_row.addWidget(self.btn_inv_save)
@@ -752,6 +986,10 @@ class MainWindow(QMainWindow):
         inv_list_layout = QVBoxLayout(inv_list_box)
 
         self.inventory_list = QListView()
+        self.inventory_list.setToolTip(
+            "List of saved inventories.\n"
+            "Click to load the selected inventory into the details and items table."
+        )
         self.inventory_list_model = QStandardItemModel(self.inventory_list)
         self.inventory_list.setModel(self.inventory_list_model)
         self.inventory_list.setSelectionMode(QListView.SingleSelection)
@@ -766,14 +1004,20 @@ class MainWindow(QMainWindow):
 
         idl.addWidget(QLabel("Name"), 0, 0)
         self.inv_name = QLineEdit()
+        self.inv_name.setToolTip(
+            "Inventory name.\n"
+            "Used for identification in the inventory list and exports."
+        )
         idl.addWidget(self.inv_name, 0, 1)
 
         idl.addWidget(QLabel("Purpose"), 1, 0)
         self.inv_purpose = QLineEdit()
+        self.inv_purpose.setToolTip("Inventory purpose/notes. Free-form text.")
         idl.addWidget(self.inv_purpose, 1, 1)
 
         idl.addWidget(QLabel("Created At"), 3, 0)
         self.inv_created_at = QLabel("-")
+        self.inv_created_at.setToolTip("Creation timestamp for the loaded inventory (read-only).")
         idl.addWidget(self.inv_created_at, 3, 1)
 
         invLayout.addWidget(inv_detail_box)
@@ -783,11 +1027,30 @@ class MainWindow(QMainWindow):
         iil = QVBoxLayout(inv_items_box)
 
         self.inventory_items_table = QTableWidget(0, 6)
+        self.inventory_items_table.setToolTip(
+            "Items in the current inventory.\n"
+            "This table is the source of truth for Inventory export/open and Load Inv → Basket\n"
+            "(includes unsaved edits)."
+        )
         self.inventory_items_table.setHorizontalHeaderLabels(
             ["Name", "Rarity", "Type", "Qty", "Unit Value", "Total Value"]
         )
         self.inventory_items_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.inventory_items_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        # Header tooltips (after labels are set)
+        inv_header_tips = [
+            "Entry name (stores Entry ID internally for export/load actions).",
+            "Item rarity.",
+            "Item type/category.",
+            "Quantity in this inventory row.",
+            "Per-item value (formatted; “*” indicates not user-updated depending on renderer rules).",
+            "Qty × Unit Value (as displayed)."
+        ]
+        for i, tip in enumerate(inv_header_tips):
+            header_item = self.inventory_items_table.horizontalHeaderItem(i)
+            if header_item is not None:
+                header_item.setToolTip(tip)
 
         self.inventory_items_table.setColumnWidth(0, 260)   # Name
         self.inventory_items_table.setColumnWidth(1, 90)    # Rarity
@@ -797,37 +1060,40 @@ class MainWindow(QMainWindow):
         self.inventory_items_table.setColumnWidth(5, 100)   # Total
 
         iil.addWidget(self.inventory_items_table)
-
         invLayout.addWidget(inv_items_box)
 
         self.tabs.addTab(self.inventory_tab, "Inventories")
 
-
-
-        # ----- Generator -------------------------------
-
+        # ---------------- Generator Details tab ----------------
         self.tab_generator_details = QWidget()
         gl = QGridLayout(self.tab_generator_details)
 
         # --- Generator toolbar (buttons) ---
         generator_toolbar_row = QHBoxLayout()
+
         self.btn_gen_new = QPushButton("New Generator")
         self.btn_gen_new.setProperty("variant", "bulbasaur")
+        self.btn_gen_new.setToolTip("Create a new generator (clears fields to define a new one).")
 
         self.btn_gen_save = QPushButton("Save Generator")
         self.btn_gen_save.setProperty("variant", "royal")
+        self.btn_gen_save.setToolTip(
+            "Save generator changes.\n"
+            "Creates a new generator if none is loaded, otherwise updates the loaded generator."
+        )
 
         self.btn_gen_delete = QPushButton("Delete Generator")
         self.btn_gen_delete.setProperty("variant", "danger")
+        self.btn_gen_delete.setToolTip("Delete the currently loaded generator. This is destructive.")
 
         self.btn_gen_clear = QPushButton("Clear Fields")
         self.btn_gen_clear.setProperty("variant", "flat")
+        self.btn_gen_clear.setToolTip("Clear generator fields in the UI only.")
 
         self.btn_gen_new.clicked.connect(self._on_gen_new_clicked)
         self.btn_gen_save.clicked.connect(self._on_gen_save_clicked)
         self.btn_gen_delete.clicked.connect(self._on_gen_delete_clicked)
         self.btn_gen_clear.clicked.connect(self._clear_generator_details)
-
 
         generator_toolbar_row.addWidget(self.btn_gen_new)
         generator_toolbar_row.addWidget(self.btn_gen_save)
@@ -841,22 +1107,30 @@ class MainWindow(QMainWindow):
 
         # --- Generator fields ---
         self.gen_name = QLineEdit()
+        self.gen_name.setToolTip("Generator name. Used for identification in the generator list.")
         gl.addWidget(QLabel("Name"), 1, 0)
         gl.addWidget(self.gen_name, 1, 1)
 
         self.gen_purpose = QLineEdit()
+        self.gen_purpose.setToolTip("What this generator is meant to produce (notes only).")
         gl.addWidget(QLabel("Purpose"), 2, 0)
         gl.addWidget(self.gen_purpose, 2, 1)
 
         self.gen_min_items = QLineEdit()
+        self.gen_min_items.setToolTip("Minimum number of items to generate.")
         gl.addWidget(QLabel("Min Items"), 3, 0)
         gl.addWidget(self.gen_min_items, 3, 1)
 
         self.gen_max_items = QLineEdit()
+        self.gen_max_items.setToolTip("Maximum number of items to generate.")
         gl.addWidget(QLabel("Max Items"), 4, 0)
         gl.addWidget(self.gen_max_items, 4, 1)
 
         self.gen_budget = QLineEdit()
+        self.gen_budget.setToolTip(
+            "Budget constraint for generation (if enforced by generator logic).\n"
+            "If not enforced, this acts as a note/reference value."
+        )
         gl.addWidget(QLabel("Budget"), 5, 0)
         gl.addWidget(self.gen_budget, 5, 1)
 
@@ -867,16 +1141,20 @@ class MainWindow(QMainWindow):
 
         self.btn_bucket_add = QPushButton("Add Bucket")
         self.btn_bucket_add.setProperty("variant", "bulbasaur")
+        self.btn_bucket_add.setToolTip("Add a new bucket to this generator.")
         self.btn_bucket_add.clicked.connect(self._on_add_bucket_clicked)
 
         self.btn_bucket_edit = QPushButton("Edit Bucket")
         self.btn_bucket_edit.setProperty("variant", "royal")
+        self.btn_bucket_edit.setToolTip("Edit the selected bucket’s settings.")
 
         self.btn_bucket_move_up = QPushButton("Move Up")
         self.btn_bucket_move_up.setProperty("variant", "flat")
+        self.btn_bucket_move_up.setToolTip("Move the selected bucket up in order.")
 
         self.btn_bucket_move_down = QPushButton("Move Down")
         self.btn_bucket_move_down.setProperty("variant", "flat")
+        self.btn_bucket_move_down.setToolTip("Move the selected bucket down in order.")
 
         self.btn_bucket_move_up.clicked.connect(self._move_bucket_up)
         self.btn_bucket_move_down.clicked.connect(self._move_bucket_down)
@@ -884,7 +1162,6 @@ class MainWindow(QMainWindow):
 
         bucket_toolbar_row.addWidget(self.btn_bucket_add)
         bucket_toolbar_row.addWidget(self.btn_bucket_edit)
-
         bucket_toolbar_row.addWidget(self.btn_bucket_move_up)
         bucket_toolbar_row.addWidget(self.btn_bucket_move_down)
         bucket_toolbar_row.addStretch(1)
@@ -908,12 +1185,26 @@ class MainWindow(QMainWindow):
 
         # Bucket table: Name | Items | Price (per item)
         self.bucket_table = QTableWidget(0, 4)
-        self.bucket_table.setHorizontalHeaderLabels(
-            ["Name", "Items", "Price (per item)", ""]
+        self.bucket_table.setToolTip(
+            "Buckets define groups of items for generation.\n"
+            "Select a row to edit or reorder."
         )
+        self.bucket_table.setHorizontalHeaderLabels(["Name", "Items", "Price (per item)", ""])
         self.bucket_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.bucket_table.setSelectionMode(QTableWidget.SingleSelection)
         self.bucket_table.setEditTriggers(QTableWidget.NoEditTriggers)
+
+        # Header tooltips
+        bucket_header_tips = [
+            "Bucket name.",
+            "Number of items currently in this bucket.",
+            "Per-item price used for bucket summaries and constraints.",
+            "Remove this bucket from the generator."
+        ]
+        for i, tip in enumerate(bucket_header_tips):
+            header_item = self.bucket_table.horizontalHeaderItem(i)
+            if header_item is not None:
+                header_item.setToolTip(tip)
 
         self.bucket_table.setColumnWidth(0, 420)   # Name
         self.bucket_table.setColumnWidth(1, 90)    # Item count
@@ -926,24 +1217,28 @@ class MainWindow(QMainWindow):
 
         self.tabs.addTab(self.tab_generator_details, "Generator Details")
 
-        # --- Log tab ---
+        # ---------------- Log tab ----------------
         self.log = QTextEdit()
+        self.log.setToolTip("Operation log output (read-only).")
         self.log.setReadOnly(True)
         self.tabs.addTab(self.log, "Log")
 
         right_layout.addWidget(self.tabs)
 
-        splitter.addWidget(left); splitter.addWidget(right)
-        splitter.setStretchFactor(0, 1); splitter.setStretchFactor(1, 2)
+        splitter.addWidget(left)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
 
-        container = QWidget(); lay = QVBoxLayout(container); lay.setContentsMargins(0, 0, 0, 0); lay.addWidget(splitter)
+        container = QWidget()
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(splitter)
         self.setCentralWidget(container)
 
-        
-
         self._on_mode_changed(self.mode_combo.currentIndex())
-
         self._refresh_inventory_list()
+
 
     # ---------- actions ----------
     def _refresh(self):
