@@ -21,7 +21,7 @@ from townecodex.db import init_db, engine
 from townecodex.models import Base
 from townecodex.ui.styles import APP_TITLE, build_stylesheet
 from townecodex.ui.backend import Backend
-from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker
+from townecodex.ui.workers import ImportWorker, ScrapeWorker, AutoPriceWorker, GenerateWorker
 from townecodex import admin_ops
 from townecodex.admin_ops import AdminScope, AdminAction, perform_admin_action
 from townecodex.generation.schema import (
@@ -444,7 +444,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.TopToolBarArea, tb)
         for a in (
             QAction("Refresh", self, triggered=self._refresh),
-            QAction("Run Generator", self, triggered=_noop),  #TODO: not yet implemented
+            QAction("Run Generator", self, triggered=self._on_run_generator_clicked),
             QAction("Export Basket", self, triggered=self._export_basket),
         ):
             tb.addAction(a)
@@ -1613,6 +1613,149 @@ class MainWindow(QMainWindow):
 
         self.bucket_table.setRowCount(0)
 
+
+    def _on_run_generator_clicked(self) -> None:
+        """
+        Run generator using the CURRENT generator UI state (unsaved).
+        Requirements:
+        - Generator name is required (UI requirement)
+        - At least one bucket is required
+        Result:
+        - Appends generated CardDTOs to self.basket (duplicates allowed)
+        - Rebuilds basket view + recomputes total
+        """
+        # --- UI requirements ---
+        gen_name = (self.gen_name.text() or "").strip()
+        if not gen_name:
+            QMessageBox.warning(self, "Run Generator", "Generator name is required.")
+            return
+
+        base_cfg = getattr(self, "current_generator_config", None)
+        if base_cfg is None or not getattr(base_cfg, "buckets", None):
+            QMessageBox.warning(self, "Run Generator", "At least one bucket is required.")
+            return
+
+        # --- Parse helpers ---
+        def _parse_opt_int(text: str) -> int | None:
+            t = (text or "").strip()
+            if not t:
+                return None
+            return int(t)
+
+        # --- Read UI fields (globals) ---
+        try:
+            min_items = _parse_opt_int(self.gen_min_items.text())
+        except ValueError:
+            QMessageBox.warning(self, "Run Generator", "Min Items must be an integer or blank.")
+            return
+
+        try:
+            max_items = _parse_opt_int(self.gen_max_items.text())
+        except ValueError:
+            QMessageBox.warning(self, "Run Generator", "Max Items must be an integer or blank.")
+            return
+
+        try:
+            budget = _parse_opt_int(self.gen_budget.text())
+        except ValueError:
+            QMessageBox.warning(self, "Run Generator", "Budget must be an integer or blank.")
+            return
+
+        if min_items is not None and min_items < 0:
+            QMessageBox.warning(self, "Run Generator", "Min Items cannot be negative.")
+            return
+        if max_items is not None and max_items < 0:
+            QMessageBox.warning(self, "Run Generator", "Max Items cannot be negative.")
+            return
+        if budget is not None and budget < 0:
+            QMessageBox.warning(self, "Run Generator", "Budget cannot be negative.")
+            return
+        if min_items is not None and max_items is not None and max_items < min_items:
+            QMessageBox.warning(self, "Run Generator", "Max Items cannot be less than Min Items.")
+            return
+
+        # --- Build a transient config for the run (avoid mutating the loaded config) ---
+        # NOTE: generator "name" is not part of GeneratorConfig; we store it into label for run context.
+        run_cfg = GeneratorConfig(
+            label=gen_name,
+            min_items=min_items,
+            max_items=max_items,
+            min_total_value=getattr(base_cfg, "min_total_value", None),
+            max_total_value=budget,  # budget maps to max_total_value for engine caps
+            global_prefer_unique=getattr(base_cfg, "global_prefer_unique", True),
+            random_seed=getattr(base_cfg, "random_seed", None),
+            buckets=[],
+            notes=getattr(base_cfg, "notes", None),
+            extra=getattr(base_cfg, "extra", {}) or {},
+        )
+
+        # Copy + validate buckets (engine treats max_count <= 0 as "no max")
+        for b in base_cfg.buckets:
+            bname = (b.name or "").strip()
+            if not bname:
+                QMessageBox.warning(self, "Run Generator", "All buckets must have a name.")
+                return
+
+            try:
+                bmin = int(b.min_count)
+                bmax = int(b.max_count)
+            except Exception:
+                QMessageBox.warning(self, "Run Generator", f"Bucket '{bname}' has invalid item counts.")
+                return
+
+            if bmin < 0:
+                QMessageBox.warning(self, "Run Generator", f"Bucket '{bname}': Min items cannot be negative.")
+                return
+
+            # Normalize unbounded
+            if bmax <= 0:
+                bmax = 0
+
+            if bmax > 0 and bmax < bmin:
+                QMessageBox.warning(
+                    self,
+                    "Run Generator",
+                    f"Bucket '{bname}': Max items cannot be less than Min items.",
+                )
+                return
+
+            run_cfg.buckets.append(BucketConfig(
+                name=bname,
+                min_count=bmin,
+                max_count=bmax,
+                allowed_rarities=getattr(b, "allowed_rarities", None),
+                type_contains_any=getattr(b, "type_contains_any", None),
+                min_value=getattr(b, "min_value", None),
+                max_value=getattr(b, "max_value", None),
+                attunement_required=getattr(b, "attunement_required", None),
+                prefer_unique=getattr(b, "prefer_unique", True),
+                extra=getattr(b, "extra", {}) or {},
+            ))
+
+        # --- Run async ---
+        worker = GenerateWorker(self.backend, run_cfg)
+
+        def _on_done(cards: list[CardDTO]) -> None:
+            if not cards:
+                self.statusBar().showMessage("Generator produced no items.", 2500)
+                self._append_log("Generator: produced 0 items.")
+                return
+
+            self.basket.extend(cards)
+            self._rebuild_basket_view()
+            self._recompute_basket_total()
+            self.statusBar().showMessage(f"Generator added {len(cards)} item(s) to basket.", 3000)
+            self._append_log(f"Generator: added {len(cards)} item(s) to basket.")
+
+        def _on_error(msg: str) -> None:
+            self._append_log(f"GENERATOR ERROR: {msg}")
+            QMessageBox.warning(self, "Run Generator", msg)
+
+        worker.signals.done.connect(_on_done)
+        worker.signals.error.connect(_on_error)
+        worker.run()
+
+
     # ------------------------------------------------------------------ #
     # Inventory UI helpers                                               #
     # ------------------------------------------------------------------ #
@@ -2536,8 +2679,6 @@ class MainWindow(QMainWindow):
         # Optional: mark dirty
         # self._set_generator_dirty(True)
 
-
-    
 
     def _load_generators(self) -> None:
         """
