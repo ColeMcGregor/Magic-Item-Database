@@ -34,7 +34,6 @@ from .. import db  # noqa: F401
 from ..importer import import_file
 from ..repos import EntryRepository
 from ..dto import to_card_dto, to_card_dtos
-from ..query import QueryService
 from ..renderers.html import HTMLCardRenderer
 
 
@@ -152,41 +151,6 @@ def cmd_init_db(_args) -> int:
     print("Database initialized successfully.")
     return 0
 
-def cmd_search(args) -> int:
-    """
-    Search via QueryService (repo-backed).
-    Supported filters: name_contains, type, rarity (multi), require_attunement, text
-    Pagination & sort included.
-    """
-    repo = EntryRepository()
-    svc = QueryService(repo)
-
-    # Build filter kwargs for QueryService.search
-    kwargs = dict(
-        name_contains=args.name_contains,
-        type_equals=args.type_equals,
-        rarity_in=args.rarity if args.rarity else None,
-        attunement_required=args.require_attunement,
-        text=args.text,
-        page=args.page,
-        size=args.size,
-        sort=args.sort,
-    )
-    # Trim Nones that the service can accept either way, but harmless:
-    results = svc.search(**kwargs)
-
-    # Print a compact list
-    for c in results:
-        att = "Yes" if c.attunement_required else "No"
-        if c.attunement_required and c.attunement_criteria:
-            att += f" ({c.attunement_criteria})"
-        val = "N/A" if c.value is None else (f"*{c.value}" if not c.value_updated else f"{c.value}")
-        print(f"[{c.id}] {c.title}  |  {c.rarity}  |  {c.type}  |  attun={att}  |  value={val}")
-    if not results:
-        print("No results.")
-    return 0
-
-
 # --- stubs to keep CLI shape stable (future wiring) ---
 
 def cmd_suggest(_args) -> int:
@@ -264,35 +228,6 @@ def _build_parser() -> argparse.ArgumentParser:
     sp.add_argument("value", help="New integer price.")
     sp.set_defaults(func=cmd_update_price)
 
-    # list (simple)
-    sp = sub.add_parser("list", help="List entries (simple; not full query).")
-    sp.add_argument("--page", type=int, default=1)
-    sp.add_argument("--size", type=int, default=50)
-    sp.add_argument("--sort", default="name",
-                    help='Sort by "name", "-name", "rarity", "value", etc.')
-    sp.set_defaults(func=cmd_list)
-
-    # search (QueryService)
-    sp = sub.add_parser("search", help="Search entries with filters & pagination.")
-    sp.add_argument("--name-contains", dest="name_contains", default=None,
-                    help="Case-insensitive substring match on name.")
-    sp.add_argument("--type", dest="type_equals", default=None,
-                    help='Exact (case-insensitive) type match. e.g. "Wondrous Item"')
-    sp.add_argument("--rarity", action="append", default=None,
-                    help="Allowed rarity (can repeat). e.g. --rarity Common --rarity Uncommon")
-    att_group = sp.add_mutually_exclusive_group()
-    att_group.add_argument("--require-attunement", dest="require_attunement",
-                           action="store_true", help="Only items that require attunement.")
-    att_group.add_argument("--no-attunement", dest="require_attunement",
-                           action="store_false", help="Only items that do NOT require attunement.")
-    sp.set_defaults(require_attunement=None)  # default: ignore attunement filter
-    sp.add_argument("--text", default=None,
-                    help="Substring over name + description.")
-    sp.add_argument("--page", type=int, default=1)
-    sp.add_argument("--size", type=int, default=50)
-    sp.add_argument("--sort", default="name",
-                    help='Sort by "name", "-name", "rarity", "value", etc.')
-    sp.set_defaults(func=cmd_search)
 
     sp = sub.add_parser("auto-price", help="Fill missing prices from chart.")
     sp.add_argument(
