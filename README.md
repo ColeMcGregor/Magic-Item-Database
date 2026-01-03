@@ -225,22 +225,22 @@ Post-import routines may run pricing, scraping, or both.
 
 ## 7. Development
 
-### Installation
+### First-Time Setup
 
-pip install -r requirements.txt
+git clone <repository-url>
+cd TowneCodex
+poetry install
 
-### Database Initialization
 
-python -m townecodex.ui.cli init-db
-can also be done via GUI ADMIN controls
+Poetry will:
+create and manage a virtual environment
+install all required dependencies (including PySide6)
+use the locked dependency versions from poetry.lock
 
-### Running the GUI
+Initialize the Database
+(bash)
+poetry run python -m townecodex.ui.cli init-db
+This only needs to be done once per database.
 
-python -m townecodex.ui.gui
-
-## 8. License
-
-Project is proprietary.
-Do not redistribute without permission.
-
-## 9. Images of Project
+Run the GUI
+poetry run python -m townecodex.ui.gui
